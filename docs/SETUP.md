@@ -92,7 +92,7 @@ uv --version
 
 ```bash
 git clone <your-repo-url>
-cd Amazon-India-Product-Research-MCP
+cd amazon-india-seller-mcp
 uv sync
 ```
 
@@ -276,8 +276,8 @@ Or open it directly:
 {
   "mcpServers": {
     "amazon-product-research": {
-      "command": "D:\\project\\Amazon-India-Product-Research-MCP\\.venv\\Scripts\\python.exe",
-      "args": ["D:\\project\\Amazon-India-Product-Research-MCP\\server.py"],
+      "command": "D:\\project\\amazon-india-seller-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["D:\\project\\amazon-india-seller-mcp\\server.py"],
       "env": {
         "DEMO_MODE": "true"
       }
@@ -292,8 +292,8 @@ Or open it directly:
 {
   "mcpServers": {
     "amazon-product-research": {
-      "command": "/Users/you/Amazon-India-Product-Research-MCP/.venv/bin/python",
-      "args": ["/Users/you/Amazon-India-Product-Research-MCP/server.py"],
+      "command": "/Users/you/amazon-india-seller-mcp/.venv/bin/python",
+      "args": ["/Users/you/amazon-india-seller-mcp/server.py"],
       "env": {
         "DEMO_MODE": "true"
       }
@@ -311,7 +311,7 @@ apps see; the direct-interpreter form above is more reliable):
     "amazon-product-research": {
       "command": "uv",
       "args": [
-        "--directory", "D:\\project\\Amazon-India-Product-Research-MCP",
+        "--directory", "D:\\project\\amazon-india-seller-mcp",
         "run", "server.py"
       ],
       "env": { "DEMO_MODE": "true" }
@@ -654,7 +654,7 @@ Work top to bottom — the checks are ordered from most to least common cause.
    config. Paste it into any JSON validator.
 2. **Check the paths exist.** Copy the `command` value and run it with `--version`:
    ```powershell
-   & "D:\project\Amazon-India-Product-Research-MCP\.venv\Scripts\python.exe" --version
+   & "D:\project\amazon-india-seller-mcp\.venv\Scripts\python.exe" --version
    ```
    If that fails, the path is wrong or `uv sync` was never run.
 3. **Confirm you fully quit Claude Desktop** (tray → Quit, not just closing the window).

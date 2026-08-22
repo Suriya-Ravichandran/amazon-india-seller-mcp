@@ -1,5 +1,5 @@
 [project]
-name = "amazon-product-mcp"
+name = "amazon-india-seller-mcp"
 version = "0.1.0"
 description = "Amazon India product research MCP server for beginner sellers (stdio transport, Claude Desktop ready)"
 readme = "README.md"
@@ -52,10 +52,10 @@ browser = [
 # NOTE: table headers must come after every bare key in [project], or the keys
 # below them are parsed as part of that table instead.
 [project.urls]
-Homepage = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP"
-Repository = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP"
-Issues = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/issues"
-Documentation = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/tree/main/docs"
+Homepage = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp"
+Repository = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp"
+Issues = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/issues"
+Documentation = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/tree/main/docs"
 
 [dependency-groups]
 dev = [

@@ -25,7 +25,7 @@ are first-time sellers and first-time contributors. Treat them accordingly.
 ## Enforcement
 
 Report problems to the maintainer through
-[GitHub](https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/issues)
+[GitHub](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/issues)
 (or privately, if the report itself is sensitive). Reports are handled confidentially.
 
 Maintainers may edit, hide or reject contributions that breach this code, and may ban

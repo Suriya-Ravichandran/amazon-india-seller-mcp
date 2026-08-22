@@ -7,8 +7,8 @@ welcome.
 ## Getting set up
 
 ```bash
-git clone https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP.git
-cd Amazon-India-Product-Research-MCP
+git clone https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp.git
+cd amazon-india-seller-mcp
 uv sync --all-extras
 uv run pytest
 ```

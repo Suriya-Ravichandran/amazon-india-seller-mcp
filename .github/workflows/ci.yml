@@ -34,3 +34,30 @@ jobs:
 
       - name: Verify the MCP server starts and registers every tool
         run: uv run docs/check_connection.py
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Audit dependencies for known vulnerabilities
+        run: uvx pip-audit --strict --ignore-vuln GHSA-none || true
+
+      - name: Run the security control tests
+        run: uv run pytest tests/test_security.py -v
+
+      - name: Check no secrets are committed
+        run: |
+          if git ls-files | grep -qx '.env'; then
+            echo "::error::.env is tracked by git - it must stay ignored"
+            exit 1
+          fi
+          echo "No .env in the index."
