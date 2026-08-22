@@ -133,6 +133,7 @@ Amazon-India-Product-Research-MCP/
 ├── docs/
 │   ├── SETUP.md                  # full setup, run and troubleshooting guide
 │   ├── SCRAPING.md               # live data sources, guardrails and compliance
+│   ├── PROMPTS.md                # copy-paste prompt library for all 20 tools
 │   └── check_connection.py       # MCP connection self-test
 │
 ├── .env.example
@@ -404,6 +405,10 @@ Check the scraper status.
 
 A natural workflow: *screen ideas → check demand and evergreen → check competitors and
 new sellers → calculate profit → plan the launch → research keywords → generate the listing.*
+
+**[docs/PROMPTS.md](docs/PROMPTS.md) is the full prompt library** — 56 copy-paste prompts
+grouped by task, chained multi-tool workflows, and prompts that make Claude show which
+numbers are live versus estimated.
 
 ---
 
