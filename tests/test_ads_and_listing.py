@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from config.settings import Settings
-from services.ads_service import MATCH_TYPE_MULTIPLIERS, AdsService
-from services.scraper_service import _badge_text, _specifications, _parse
+from amazon_india_seller_mcp.config.settings import Settings
+from amazon_india_seller_mcp.services.ads_service import MATCH_TYPE_MULTIPLIERS, AdsService
+from amazon_india_seller_mcp.services.scraper_service import _badge_text, _specifications, _parse
 from tests import build_services, run
-from tools.listing_scraper import _score_listing
-from tools.ppc_bidding import calculate_ppc_bids, plan_ppc_campaign
-from tools.ppc_keywords import suggest_ppc_keywords
+from amazon_india_seller_mcp.tools.listing_scraper import _score_listing
+from amazon_india_seller_mcp.tools.ppc_bidding import calculate_ppc_bids, plan_ppc_campaign
+from amazon_india_seller_mcp.tools.ppc_keywords import suggest_ppc_keywords
 
 
 @pytest.fixture(scope="module")

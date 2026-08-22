@@ -1,6 +1,6 @@
 [project]
 name = "amazon-india-seller-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Amazon India product research MCP server for beginner sellers (stdio transport, Claude Desktop ready)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,6 +51,9 @@ browser = [
 
 # NOTE: table headers must come after every bare key in [project], or the keys
 # below them are parsed as part of that table instead.
+[project.scripts]
+amazon-india-seller-mcp = "amazon_india_seller_mcp.server:main"
+
 [project.urls]
 Homepage = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp"
 Repository = "https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp"
@@ -62,10 +65,24 @@ dev = [
     "pytest>=8.0",
 ]
 
-[tool.uv]
-# Virtual project: dependencies are managed by uv, but the source tree itself is
-# run directly (python server.py) rather than installed as a distribution.
-package = false
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["amazon_india_seller_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/amazon_india_seller_mcp",
+    "/tests",
+    "/docs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/.env.example",
+    "/mcp.json.example",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

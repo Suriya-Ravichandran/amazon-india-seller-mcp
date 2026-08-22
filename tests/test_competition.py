@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests import build_services, run
-from tools.competition import analyze_competition
+from amazon_india_seller_mcp.tools.competition import analyze_competition
 
 COMPETITION_LEVELS = {"Low", "Medium-Low", "Medium", "Medium-High", "High", "Very High"}
 

@@ -1,27 +1,34 @@
 {
-  "_comment": "Claude Desktop configuration. Copy the mcpServers block into claude_desktop_config.json and replace the absolute paths.",
+  "_comment": "Claude Desktop configuration. Copy the mcpServers block into claude_desktop_config.json. The uvx form needs no clone and no paths.",
 
   "mcpServers": {
-    "amazon-product-research": {
-      "command": "D:\project\amazon-india-seller-mcp\.venv\Scripts\python.exe",
-      "args": [
-        "D:\project\amazon-india-seller-mcp\server.py"
-      ],
+    "amazon-india-seller": {
+      "command": "uvx",
+      "args": ["amazon-india-seller-mcp"],
       "env": {
-        "DEMO_MODE": "true",
-        "DATABASE_URL": "sqlite:///D:/project/amazon-india-seller-mcp/amazon_product_mcp.db",
-        "LOG_LEVEL": "INFO"
+        "DEMO_MODE": "true"
       }
     }
   },
 
-  "_macos_or_linux_example": {
+  "_from_a_source_checkout_windows": {
     "mcpServers": {
-      "amazon-product-research": {
+      "amazon-india-seller": {
+        "command": "D:\\project\\amazon-india-seller-mcp\\.venv\\Scripts\\python.exe",
+        "args": ["-m", "amazon_india_seller_mcp"],
+        "env": {
+          "DEMO_MODE": "true",
+          "LOG_LEVEL": "INFO"
+        }
+      }
+    }
+  },
+
+  "_from_a_source_checkout_macos_linux": {
+    "mcpServers": {
+      "amazon-india-seller": {
         "command": "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/.venv/bin/python",
-        "args": [
-          "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/server.py"
-        ],
+        "args": ["-m", "amazon_india_seller_mcp"],
         "env": {
           "DEMO_MODE": "true"
         }
@@ -29,20 +36,25 @@
     }
   },
 
-  "_uv_example": {
+  "_uv_directory_form": {
     "mcpServers": {
-      "amazon-product-research": {
+      "amazon-india-seller": {
         "command": "uv",
-        "args": [
-          "--directory",
-          "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp",
-          "run",
-          "server.py"
-        ],
+        "args": ["--directory", "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp", "run", "server.py"],
         "env": {
           "DEMO_MODE": "true"
         }
       }
     }
+  },
+
+  "_live_data_env_no_api_keys": {
+    "DEMO_MODE": "false",
+    "PRODUCT_DATA_PROVIDER": "scraper",
+    "GOOGLE_TRENDS_ENABLED": "true",
+    "WEB_SEARCH_PROVIDER": "duckduckgo",
+    "BROWSER_ENABLED": "true",
+    "BROWSER_ALLOWED_DOMAINS": "amazon.in",
+    "BROWSER_MIN_DELAY_SECONDS": "8"
   }
 }

@@ -90,8 +90,25 @@ uv --version
 
 ## 3. Install the project
 
+### The short way (no clone, no paths)
+
 ```bash
-git clone <your-repo-url>
+uvx amazon-india-seller-mcp
+```
+
+`uvx` downloads the package, runs it in a throwaway environment and caches it. Skip
+to [section 6](#6-connect-claude-desktop) — there is nothing else to install.
+
+To keep it installed rather than fetched on demand:
+
+```bash
+uv tool install amazon-india-seller-mcp
+```
+
+### From a source checkout (to develop, or change the code)
+
+```bash
+git clone https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp.git
 cd amazon-india-seller-mcp
 uv sync
 ```
@@ -189,7 +206,9 @@ offline and never writes to your research database.
 ### 5.2 Start the server manually
 
 ```bash
-uv run server.py
+uvx amazon-india-seller-mcp                 # installed from PyPI
+uv run python -m amazon_india_seller_mcp    # from a source checkout
+uv run server.py                            # legacy path, still works
 ```
 
 Expected:

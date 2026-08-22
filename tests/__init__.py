@@ -33,6 +33,6 @@ def run(coro: Awaitable[T]) -> T:
 
 def build_services() -> Any:
     """A fresh service bundle bound to the test settings."""
-    from tools import ServiceBundle
+    from amazon_india_seller_mcp.tools import ServiceBundle
 
     return ServiceBundle.create()

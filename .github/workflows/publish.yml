@@ -1,0 +1,115 @@
+name: Publish to PyPI
+
+# Publishing happens when a GitHub Release is published, so the release notes and
+# the uploaded version always match.
+#
+# SETUP REQUIRED BEFORE THE FIRST RUN
+# -----------------------------------
+# This uses PyPI Trusted Publishing (OIDC), so no API token is ever stored in the
+# repository. Configure it once at https://pypi.org/manage/account/publishing/
+#
+#   PyPI Project Name: amazon-india-seller-mcp
+#   Owner:             Suriya-Ravichandran
+#   Repository name:   amazon-india-seller-mcp
+#   Workflow name:     publish.yml
+#   Environment name:  pypi
+#
+# Then create a GitHub environment named "pypi" (Settings > Environments). Adding
+# a required reviewer there means every upload needs an explicit approval, which
+# is worth it: a PyPI version number can be yanked but never reused.
+#
+# Test the whole path against TestPyPI first by running this workflow manually
+# with "target: testpypi".
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run the full test suite
+        run: uv run pytest -q
+
+      - name: Verify the MCP server starts and registers every tool
+        run: uv run docs/check_connection.py
+
+      - name: Build the sdist and wheel
+        run: uv build
+
+      - name: Check the distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Verify the wheel installs and runs in a clean environment
+        run: |
+          uv venv /tmp/verify
+          uv pip install --python /tmp/verify/bin/python dist/*.whl
+          /tmp/verify/bin/python -c "
+          import asyncio, amazon_india_seller_mcp as p
+          server = p.create_server()
+          tools = asyncio.run(server.list_tools())
+          assert len(tools) >= 24, f'expected 24+ tools, found {len(tools)}'
+          print(f'{p.__version__}: {len(tools)} tools registered')
+          "
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write        # required for trusted publishing; no token needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  publish-pypi:
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

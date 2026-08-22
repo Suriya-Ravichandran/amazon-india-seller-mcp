@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/amazon-india-seller-mcp.svg)](https://pypi.org/project/amazon-india-seller-mcp/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -92,9 +93,14 @@ This project refuses to make up marketplace facts. Every meaningful output carri
 ```text
 amazon-india-seller-mcp/
 │
-├── server.py                     # MCP entry point (stdio transport) - wiring only
+├── amazon_india_seller_mcp/      # the installable package
+│   ├── __init__.py
+│   ├── __main__.py               # python -m amazon_india_seller_mcp
+│   └── server.py                 # MCP entry point (stdio transport) - wiring only
 │
-├── tools/                        # MCP tool definitions - thin: validate, call service, shape result
+├── server.py                     # compatibility shim: python server.py still works
+│
+├── amazon_india_seller_mcp/tools/                        # MCP tool definitions - thin: validate, call service, shape result
 │   ├── __init__.py               # ServiceBundle + error-handling decorator
 │   ├── product_research.py       # research_product
 │   ├── demand_analysis.py        # analyze_product_demand
@@ -118,7 +124,7 @@ amazon-india-seller-mcp/
 │   ├── amazon_scraper.py         # scrape_amazon_search / scrape_amazon_product / scraper_status
 │   └── listing_scraper.py        # scrape_listing_details
 │
-├── services/                     # All business logic
+├── amazon_india_seller_mcp/services/                     # All business logic
 │   ├── __init__.py               # Data envelopes, errors, cache, opportunity scoring
 │   ├── amazon_service.py         # Provider abstraction (demo / scraper / API), snapshots, risk, reviews, listings
 │   ├── trends_service.py         # Demand, trend direction, seasonality, keywords, live Google Trends
@@ -131,11 +137,11 @@ amazon-india-seller-mcp/
 │   ├── ads_service.py            # Sponsored Products bid maths, keyword match types, campaign structure
 │   └── security.py               # SSRF guards, log redaction, prompt-injection scanning, size caps
 │
-├── database/                     # Research history
+├── amazon_india_seller_mcp/database/                     # Research history
 │   ├── __init__.py
 │   └── models.py                 # SQLAlchemy models + session handling
 │
-├── config/                       # Centralised settings
+├── amazon_india_seller_mcp/config/                       # Centralised settings
 │   ├── __init__.py
 │   └── settings.py               # Env-driven settings + configurable fee schedule
 │
@@ -171,17 +177,46 @@ services hold all of it.
 
 ## Installation
 
-Quick version below; the [Setup & Run Guide](docs/SETUP.md) covers every step in detail.
+**Requirements:** Python 3.11+ and [uv](https://docs.astral.sh/uv/). The
+[Setup & Run Guide](docs/SETUP.md) covers every step in detail.
 
-**Requirements:** Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+### Use it without cloning anything
 
 ```bash
-git clone <your-repo-url>
-cd amazon-india-seller-mcp
-uv sync
+uvx amazon-india-seller-mcp
 ```
 
-`uv sync` creates `.venv/` and installs the locked dependency set. That is the whole setup.
+That is the whole install. Point Claude Desktop at it:
+
+```json
+{
+  "mcpServers": {
+    "amazon-india-seller": {
+      "command": "uvx",
+      "args": ["amazon-india-seller-mcp"],
+      "env": { "DEMO_MODE": "true" }
+    }
+  }
+}
+```
+
+### Or install it into an environment
+
+```bash
+uv tool install amazon-india-seller-mcp     # then run: amazon-india-seller-mcp
+pip install amazon-india-seller-mcp         # works too
+```
+
+### Or work from a source checkout (for development)
+
+```bash
+git clone https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp.git
+cd amazon-india-seller-mcp
+uv sync --all-extras
+uv run python -m amazon_india_seller_mcp
+```
+
+Free live data needs the extras: `uv sync --extra realtime --extra browser`.
 
 <details>
 <summary>Installing uv</summary>
@@ -275,7 +310,9 @@ failure is logged rather than surfaced.
 ## Running the MCP
 
 ```bash
-uv run server.py
+uvx amazon-india-seller-mcp              # installed
+uv run python -m amazon_india_seller_mcp # from a checkout
+uv run server.py                         # legacy path, still supported
 ```
 
 The process speaks the MCP protocol over stdio, so it will sit there silently waiting for a

@@ -11,8 +11,8 @@ import logging
 
 import pytest
 
-from config.settings import Settings
-from services.security import (
+from amazon_india_seller_mcp.config.settings import Settings
+from amazon_india_seller_mcp.services.security import (
     MAX_RESPONSE_BYTES,
     REDACTED,
     RedactingFilter,
@@ -26,9 +26,9 @@ from services.security import (
     validate_config_path,
     validate_public_url,
 )
-from services.browser_service import BrowserService
+from amazon_india_seller_mcp.services.browser_service import BrowserService
 from tests import build_services, run
-from tools.web_search import search_web
+from amazon_india_seller_mcp.tools.web_search import search_web
 
 
 # --------------------------------------------------------------------------- #

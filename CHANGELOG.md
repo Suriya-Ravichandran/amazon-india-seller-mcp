@@ -5,6 +5,31 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-22
+
+### Changed
+
+- **The project is now an installable distribution.** Install with
+  `uvx amazon-india-seller-mcp`, `uv tool install amazon-india-seller-mcp` or
+  `pip install amazon-india-seller-mcp` — no clone, and no absolute paths in the
+  Claude Desktop config.
+- All code moved into the `amazon_india_seller_mcp` package. The previous
+  top-level `config`, `database`, `services` and `tools` modules would have
+  collided with other distributions in `site-packages`.
+- Added an `amazon-india-seller-mcp` console script and a
+  `python -m amazon_india_seller_mcp` entry point.
+
+### Added
+
+- A trusted-publishing workflow for PyPI (OIDC, no API token stored in the repo)
+  that runs the full suite, checks the distribution metadata, and verifies the
+  wheel installs and registers all 24 tools in a clean environment before upload.
+
+### Compatibility
+
+- `python server.py` still works. The root `server.py` is now a shim, so existing
+  Claude Desktop configurations that point at it by path need no changes.
+
 ## [0.1.0] - 2026-08-22
 
 First public release. An MCP server that turns Claude Desktop into a product research
@@ -103,4 +128,5 @@ assistant for beginner Amazon India sellers — 24 tools, working with zero API 
 - SP-API and Product Advertising API providers are routed but not implemented; they
   raise a clear error rather than returning fabricated data.
 
+[0.2.0]: https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases/tag/v0.1.0

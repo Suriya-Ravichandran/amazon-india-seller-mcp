@@ -221,3 +221,4 @@ __marimo__/
 amazon_product_mcp.db
 *.sqlite3
 fees.json
+dist/

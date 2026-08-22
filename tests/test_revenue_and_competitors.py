@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from config.settings import Settings
-from services.revenue_service import RevenueService
+from amazon_india_seller_mcp.config.settings import Settings
+from amazon_india_seller_mcp.services.revenue_service import RevenueService
 from tests import build_services, run
-from tools.competitor_analysis import analyze_competitors
-from tools.evergreen_analysis import analyze_evergreen
-from tools.purchase_signals import analyze_purchase_signals
-from tools.revenue_calculator import calculate_revenue
+from amazon_india_seller_mcp.tools.competitor_analysis import analyze_competitors
+from amazon_india_seller_mcp.tools.evergreen_analysis import analyze_evergreen
+from amazon_india_seller_mcp.tools.purchase_signals import analyze_purchase_signals
+from amazon_india_seller_mcp.tools.revenue_calculator import calculate_revenue
 
 
 @pytest.fixture(scope="module")

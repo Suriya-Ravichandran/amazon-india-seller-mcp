@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from config.settings import Settings
-from services.pricing_service import PricingService
+from amazon_india_seller_mcp.config.settings import Settings
+from amazon_india_seller_mcp.services.pricing_service import PricingService
 from tests import build_services, run
-from tools.profit_calculator import calculate_profitability
+from amazon_india_seller_mcp.tools.profit_calculator import calculate_profitability
 
 
 @pytest.fixture(scope="module")

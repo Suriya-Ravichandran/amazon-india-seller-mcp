@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from services import (
+from amazon_india_seller_mcp.services import (
     OpportunityScores,
     recommendation_for_score,
     score_opportunity,
 )
 from tests import build_services, run
-from tools.product_research import research_product
+from amazon_india_seller_mcp.tools.product_research import research_product
 
 PRODUCT = "silicone sink strainer"
 

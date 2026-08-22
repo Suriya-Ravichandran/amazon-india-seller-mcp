@@ -35,23 +35,29 @@ In practice:
 
 Keep the layering intact:
 
+All code lives in the `amazon_india_seller_mcp/` package — top-level names like
+`tools` or `config` would collide with other distributions once published.
+
 | Layer | Responsibility |
 |---|---|
-| `server.py` | Wiring only — no business logic |
-| `tools/` | Validate input, call a service, shape the result, handle errors |
-| `services/` | All business logic |
-| `database/` | SQLAlchemy models and session handling |
-| `config/` | Environment-driven settings |
+| `amazon_india_seller_mcp/server.py` | Wiring only — no business logic |
+| `amazon_india_seller_mcp/tools/` | Validate input, call a service, shape the result, handle errors |
+| `amazon_india_seller_mcp/services/` | All business logic |
+| `amazon_india_seller_mcp/database/` | SQLAlchemy models and session handling |
+| `amazon_india_seller_mcp/config/` | Environment-driven settings |
+
+The root `server.py` is a compatibility shim, so older Claude Desktop configs that
+point at it by path keep working.
 
 A new tool is usually a thin file in `tools/` plus logic in an existing service. If a
 tool file starts growing calculations, move them into a service.
 
 ## Adding a tool
 
-1. Create `tools/your_tool.py` with a Pydantic input model, an `@tool_handler`
-   decorated async function, and a `register(mcp, services)` function.
-2. Put the real logic in a service under `services/`.
-3. Add the module to `TOOL_MODULES` in `server.py`.
+1. Create `amazon_india_seller_mcp/tools/your_tool.py` with a Pydantic input model,
+   an `@tool_handler` decorated async function, and a `register(mcp, services)` function.
+2. Put the real logic in a service under `amazon_india_seller_mcp/services/`.
+3. Add the module to `TOOL_MODULES` in `amazon_india_seller_mcp/server.py`.
 4. Add the tool name to `EXPECTED_TOOLS` in `docs/check_connection.py`.
 5. Write tests, including at least one invalid-input case.
 6. Document it in the README tool table and add a prompt to `docs/PROMPTS.md`.

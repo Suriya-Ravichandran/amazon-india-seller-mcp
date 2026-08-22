@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from services.trends_service import TrendsService
+from amazon_india_seller_mcp.services.trends_service import TrendsService
 from tests import build_services, run
-from tools.demand_analysis import analyze_product_demand
+from amazon_india_seller_mcp.tools.demand_analysis import analyze_product_demand
 
 LAUNCH_DECISIONS = {
     "Strong Opportunity", "Good Opportunity", "Moderate Opportunity", "High Risk", "Avoid",

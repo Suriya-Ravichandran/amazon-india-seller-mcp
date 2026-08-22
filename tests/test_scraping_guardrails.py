@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from config.settings import Settings
-from services.browser_service import (
+from amazon_india_seller_mcp.config.settings import Settings
+from amazon_india_seller_mcp.services.browser_service import (
     BLOCK_MARKERS,
     BlockedError,
     BrowserDisabledError,
@@ -17,7 +17,7 @@ from services.browser_service import (
     DomainNotAllowedError,
     PageBudgetExceededError,
 )
-from services.scraper_service import (
+from amazon_india_seller_mcp.services.scraper_service import (
     AmazonScraperService,
     _bought,
     _category_ranks,
@@ -27,7 +27,7 @@ from services.scraper_service import (
     _weight_grams,
 )
 from tests import build_services, run
-from tools.amazon_scraper import scrape_amazon_search, scraper_status
+from amazon_india_seller_mcp.tools.amazon_scraper import scrape_amazon_search, scraper_status
 
 
 @pytest.fixture(scope="module")
@@ -191,7 +191,7 @@ def test_scraper_status_lists_blockers(services):
 
 # -- search service --------------------------------------------------------- #
 def test_demo_search_is_labelled_and_deterministic(services):
-    from tools.web_search import search_web
+    from amazon_india_seller_mcp.tools.web_search import search_web
 
     first = run(search_web(services, "silicone sink strainer", max_results=3))
     second = run(search_web(build_services(), "silicone sink strainer", max_results=3))
@@ -201,7 +201,7 @@ def test_demo_search_is_labelled_and_deterministic(services):
 
 
 def test_search_rejects_bad_input(services):
-    from tools.web_search import search_web
+    from amazon_india_seller_mcp.tools.web_search import search_web
 
     assert run(search_web(services, "x"))["ok"] is False
     assert run(search_web(services, "valid query", max_results=999))["ok"] is False
