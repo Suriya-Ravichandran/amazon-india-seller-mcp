@@ -1,5 +1,11 @@
 # Amazon India Product Research MCP
 
+[![CI](https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 An MCP (Model Context Protocol) server that turns Claude Desktop into a product research
 assistant for **beginner Amazon India sellers**. It scores product opportunities, estimates
 demand, sizes up competition, calculates real Amazon India profitability, plans sourcing,
@@ -11,7 +17,7 @@ Runs over **stdio**, so it plugs straight into Claude Desktop.
 > verification and Claude Desktop configuration, with a troubleshooting section.
 > For live data, see the [Live Data & Scraping Guide](docs/SCRAPING.md).
 
-**20 tools. Works with zero API keys** — in demo mode offline, or on real live data
+**24 tools. Works with zero API keys** — in demo mode offline, or on real live data
 from free sources (Google Trends, DuckDuckGo, public amazon.in pages).
 
 ---
@@ -63,6 +69,9 @@ This project refuses to make up marketplace facts. Every meaningful output carri
   those are already clearing 300+ units/month — the strongest signal a page is winnable
 - **Evergreen scoring** from up to 5 years of real search interest, so you avoid
   seasonal dead stock
+- **Amazon Ads planning**: break-even ACOS, bid ladders by match type, keyword match
+  assignment, campaign structure and negative keywords — all derived from your own
+  unit economics rather than generic advice
 - 0–100 weighted opportunity scoring, plus batch screening of up to 15 ideas at once
 - Amazon India fee maths: referral, closing, FBA / Easy Ship / Self Ship, GST on fees,
   return reserve, break-even and recommended price
@@ -101,8 +110,11 @@ Amazon-India-Product-Research-MCP/
 │   ├── product_images.py         # analyze_product_images
 │   ├── opportunity_finder.py     # find_product_opportunities
 │   ├── launch_planner.py         # plan_product_launch
+│   ├── ppc_keywords.py           # suggest_ppc_keywords
+│   ├── ppc_bidding.py            # calculate_ppc_bids / plan_ppc_campaign
 │   ├── web_search.py             # search_web
-│   └── amazon_scraper.py         # scrape_amazon_search / scrape_amazon_product / scraper_status
+│   ├── amazon_scraper.py         # scrape_amazon_search / scrape_amazon_product / scraper_status
+│   └── listing_scraper.py        # scrape_listing_details
 │
 ├── services/                     # All business logic
 │   ├── __init__.py               # Data envelopes, errors, cache, opportunity scoring
@@ -113,7 +125,8 @@ Amazon-India-Product-Research-MCP/
 │   ├── revenue_service.py        # Units from BSR/badges, revenue, competitor stage, evergreen scoring
 │   ├── search_service.py         # Web search (DuckDuckGo free, Brave/Serper/Tavily/Google CSE)
 │   ├── browser_service.py        # Guardrailed fetching: allowlist, robots.txt, delay, budget, block detection
-│   └── scraper_service.py        # Amazon India page parsing (search, product, reviews, bestsellers)
+│   ├── scraper_service.py        # Amazon India page parsing (search, product, listing detail, reviews, bestsellers)
+│   └── ads_service.py            # Sponsored Products bid maths, keyword match types, campaign structure
 │
 ├── database/                     # Research history
 │   ├── __init__.py
@@ -138,6 +151,11 @@ Amazon-India-Product-Research-MCP/
 │
 ├── .env.example
 ├── mcp.json.example
+├── LICENSE                       # MIT
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
+├── .github/workflows/ci.yml      # tests on Python 3.11-3.13
 ├── pyproject.toml                # Dependencies, managed by uv
 └── uv.lock
 ```
@@ -334,6 +352,15 @@ server.py` variant is also included in the example file.
 | `generate_listing` | SEO title and alternatives, five bullets, description, backend terms, image direction, packaging advice and a compliance checklist |
 | `analyze_product_images` | Competitor gallery coverage, thin galleries you can beat, Amazon's image requirements and a seven-slot image plan |
 | `analyze_reviews` | Complaints grouped by theme with mention counts and concrete product fixes, plus appreciated features and differentiation angles |
+| `scrape_listing_details` | Full teardown of a live listing — title, images, bullets, description, A+, video, specs, badges, variations — graded 0–100 with how to beat it |
+
+### Advertising
+
+| Tool | What it does |
+|---|---|
+| `suggest_ppc_keywords` | Ad keywords with match type (exact / phrase / broad), suggested bid from your unit profit, priority, campaign placement, plus negative keywords |
+| `calculate_ppc_bids` | Break-even ACOS (= your margin), target ACOS, break-even and target CPC, a bid ladder per match type, clicks and ad cost per order. Checks a bid you already run |
+| `plan_ppc_campaign` | Three-campaign structure (Auto discovery, Manual Exact core, Phrase/Broad expansion) with budget split, projected orders and a weekly optimisation routine |
 
 ### Sourcing
 
@@ -399,6 +426,12 @@ Find customer complaints about manual soap dispensers.
 Generate an Amazon India listing for a reusable silicone food storage bag.
 
 Scrape live Amazon India results for "silicone sink strainer".
+
+Tear down ASIN B0XXXXXXXX and tell me how to beat that listing.
+
+What should I bid on Amazon Ads for a ₹399 product that costs ₹120?
+
+Plan a ₹6,000/month PPC campaign for my sink strainer launch.
 
 Check the scraper status.
 ```
@@ -483,7 +516,7 @@ is not implemented here.
 ## Testing
 
 ```bash
-uv run pytest                      # whole suite (119 tests)
+uv run pytest                      # whole suite (144 tests)
 uv run pytest -v                   # verbose
 uv run pytest tests/test_profit_calculator.py
 uv run docs/check_connection.py    # end-to-end MCP connection self-test
@@ -544,6 +577,35 @@ the MCP log files (`%APPDATA%\Claude\logs` on Windows, `~/Library/Logs/Claude` o
 - Category-level gating and certification (BIS / FSSAI) reference data
 - Calibrating the BSR-to-units curves against real seller sales data
 - Bestseller-list mining for proven-demand product discovery
+
+---
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The rule that matters most: **never invent data, and never let an estimate look like a
+measurement.** People spend real money on this output, so every value carries its
+source, data type and confidence.
+
+Particularly valuable right now:
+
+- Selector fixes when Amazon changes its markup
+- Calibrating the BSR-to-units curves against real sales data
+- GST, category compliance and import-cost tooling for Indian sellers
+- Real SP-API / Product Advertising API providers
+
+Pull requests adding bot-protection bypass (proxy rotation, fingerprint spoofing,
+CAPTCHA solving) will be declined — see [docs/SCRAPING.md](docs/SCRAPING.md).
+
+Also see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SECURITY.md](SECURITY.md).
+
+---
+
+## Licence
+
+[MIT](LICENSE) — free to use, modify and distribute, including commercially. The
+software is provided as is, without warranty.
 
 ---
 

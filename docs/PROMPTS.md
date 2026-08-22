@@ -3,7 +3,7 @@
 Copy-paste prompts for Claude Desktop, organised by what you are trying to find out.
 
 You never name the tool — Claude picks it. Just describe the question the way you
-would to a person. Every prompt below was written against the 20 tools this server
+would to a person. Every prompt below was written against the 24 tools this server
 provides.
 
 ---
@@ -17,10 +17,11 @@ provides.
 5. [Money: profit, revenue, launch budget](#money-profit-revenue-launch-budget)
 6. [Sourcing and suppliers](#sourcing-and-suppliers)
 7. [Building the listing](#building-the-listing)
-8. [Live data and scraping](#live-data-and-scraping)
-9. [Chained workflows](#chained-workflows)
-10. [Prompts that make Claude show its working](#prompts-that-make-claude-show-its-working)
-11. [Writing your own prompts](#writing-your-own-prompts)
+8. [Amazon Ads: keywords, bids and campaigns](#amazon-ads-keywords-bids-and-campaigns)
+9. [Live data and scraping](#live-data-and-scraping)
+10. [Chained workflows](#chained-workflows)
+11. [Prompts that make Claude show its working](#prompts-that-make-claude-show-its-working)
+12. [Writing your own prompts](#writing-your-own-prompts)
 
 ---
 
@@ -247,6 +248,50 @@ complaints in the category.
 
 ---
 
+## Amazon Ads: keywords, bids and campaigns
+
+```text
+What should I bid on Amazon Ads for a ₹399 product that costs ₹120?
+```
+
+```text
+What's my break-even ACOS if I sell at ₹449 with a ₹150 product cost?
+```
+
+```text
+I'm paying ₹22 per click on Amazon Ads for a ₹399 product that costs me ₹120.
+Am I losing money?
+```
+
+```text
+Suggest PPC keywords for a silicone sink strainer selling at ₹399, cost ₹120.
+Tell me which to run on exact match and what to bid.
+```
+
+```text
+What negative keywords should I add on day one for a sink strainer campaign?
+```
+
+```text
+Plan a ₹6,000 per month PPC campaign for my sink strainer launch at ₹399,
+₹120 cost. Split it across campaigns and tell me the weekly routine.
+```
+
+```text
+I'm past launch and want profitability, not volume. Replan my PPC campaign
+with a target ACOS below break-even.
+```
+
+```text
+My conversion rate is actually 6%, not the default. Recalculate my bids.
+```
+
+```text
+Is my margin even good enough to advertise this product? Be blunt.
+```
+
+---
+
 ## Live data and scraping
 
 ```text
@@ -260,6 +305,15 @@ listings have purchase badges.
 
 ```text
 Scrape ASIN B0D41Y1BHN and tell me its BSR, weight, images and estimated sales.
+```
+
+```text
+Tear down the listing for ASIN B0D41Y1BHN. Score it and tell me exactly what I
+would need to do to beat it.
+```
+
+```text
+Compare my planned listing against ASIN B0D41Y1BHN — where would I lose?
 ```
 
 ```text
@@ -306,6 +360,16 @@ Take the winner and:
 - research its keywords
 - generate a full Amazon India listing
 - plan a ₹20,000 launch assuming a ₹120 product cost and ₹399 price
+```
+
+### Launch with an ad plan
+
+```text
+For a silicone sink strainer at ₹399 with a ₹120 cost and a ₹20,000 budget:
+- plan the launch (units, budget split, timeline)
+- suggest PPC keywords with bids and match types
+- plan the PPC campaign structure
+- tell me the break-even CPC I must never bid past
 ```
 
 ### Competitor teardown
