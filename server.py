@@ -1,0 +1,122 @@
+"""Amazon India Product Research MCP server (stdio transport).
+
+Entry point only: it wires configuration, services and tools together and runs
+the MCP server.  All business logic lives in ``services/`` and all tool
+definitions live in ``tools/``.
+
+Run directly (Claude Desktop does exactly this):
+
+    python server.py
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+
+# Allow `python server.py` from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+try:  # mcp >= 2.0
+    from mcp.server.mcpserver import MCPServer as MCPServerClass  # noqa: E402
+except ImportError:  # pragma: no cover - mcp 1.x fallback
+    from mcp.server.fastmcp import FastMCP as MCPServerClass  # noqa: E402
+
+from config.settings import Settings, configure_logging, get_settings  # noqa: E402
+from database.models import init_db  # noqa: E402
+from tools import ServiceBundle  # noqa: E402
+from tools import (  # noqa: E402
+    competition,
+    demand_analysis,
+    keyword_research,
+    listing_generator,
+    product_research,
+    profit_calculator,
+    review_analysis,
+    supplier_search,
+)
+
+logger = logging.getLogger("amazon_product_mcp")
+
+SERVER_NAME = "amazon-product-research"
+TOOL_MODULES = (
+    product_research,
+    demand_analysis,
+    competition,
+    profit_calculator,
+    supplier_search,
+    review_analysis,
+    keyword_research,
+    listing_generator,
+)
+
+SERVER_INSTRUCTIONS = """
+Amazon India product research for beginner sellers (investment ₹5,000-₹20,000,
+selling price ₹199-₹699, under 500 g, 30%+ target margin, non-seasonal daily-use
+products).
+
+Available tools: research_product, analyze_product_demand, analyze_competition,
+calculate_profitability, search_suppliers, analyze_reviews, research_keywords,
+generate_listing.
+
+Data integrity rules when presenting results to the user:
+- Always repeat the source, data_type and confidence fields. Data types are
+  Live, Verified, Estimated, Historical and Demo.
+- In demo mode the marketplace figures are deterministic samples, NOT real
+  Amazon data. Never present them as live BSR, sales or price data.
+- Never promise guaranteed profit or sales; profitability output is per-order
+  maths based on the inputs and the configured fee schedule.
+- Supplier names, prices and MOQs are never invented. If supplier data is
+  unavailable, say so and use the returned public sourcing channels instead.
+""".strip()
+
+
+def create_server(settings: Settings | None = None) -> "MCPServerClass":
+    """Build the MCP server with all services and tools registered."""
+    settings = settings or get_settings()
+    configure_logging(settings)
+
+    mcp = MCPServerClass(SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
+    services = ServiceBundle.create(settings)
+
+    for module in TOOL_MODULES:
+        module.register(mcp, services)
+
+    logger.info(
+        "%s ready | env=%s | demo_mode=%s | provider=%s | tools=%d",
+        SERVER_NAME,
+        settings.app_env,
+        settings.is_demo,
+        settings.product_data_provider,
+        len(TOOL_MODULES),
+    )
+    if settings.is_demo:
+        logger.warning(
+            "DEMO MODE is active: marketplace figures are deterministic samples, not real Amazon data."
+        )
+    return mcp
+
+
+def bootstrap_database(settings: Settings) -> None:
+    """Create database tables; a failure here must not stop the server."""
+    if not settings.persist_research:
+        logger.info("Research persistence disabled (PERSIST_RESEARCH=false).")
+        return
+    try:
+        init_db()
+        logger.info("Database ready at %s", settings.database_url.split("@")[-1])
+    except Exception:  # noqa: BLE001 - research history is a convenience, not a dependency
+        logger.exception("Database initialisation failed; continuing without research history")
+
+
+def main() -> None:
+    """Start the MCP server over stdio."""
+    settings = get_settings()
+    server = create_server(settings)
+    bootstrap_database(settings)
+    server.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

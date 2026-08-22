@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Amazon Product Research MCP
+amazon_product_mcp.db
+*.sqlite3
+fees.json

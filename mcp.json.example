@@ -1,0 +1,48 @@
+{
+  "_comment": "Claude Desktop configuration. Copy the mcpServers block into claude_desktop_config.json and replace the absolute paths.",
+
+  "mcpServers": {
+    "amazon-product-research": {
+      "command": "D:\project\Amazon-India-Product-Research-MCP\.venv\Scripts\python.exe",
+      "args": [
+        "D:\project\Amazon-India-Product-Research-MCP\server.py"
+      ],
+      "env": {
+        "DEMO_MODE": "true",
+        "DATABASE_URL": "sqlite:///D:/project/Amazon-India-Product-Research-MCP/amazon_product_mcp.db",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  },
+
+  "_macos_or_linux_example": {
+    "mcpServers": {
+      "amazon-product-research": {
+        "command": "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/.venv/bin/python",
+        "args": [
+          "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/server.py"
+        ],
+        "env": {
+          "DEMO_MODE": "true"
+        }
+      }
+    }
+  },
+
+  "_uv_example": {
+    "mcpServers": {
+      "amazon-product-research": {
+        "command": "uv",
+        "args": [
+          "--directory",
+          "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP",
+          "run",
+          "server.py"
+        ],
+        "env": {
+          "DEMO_MODE": "true"
+        }
+      }
+    }
+  }
+}
