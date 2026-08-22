@@ -6,6 +6,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Security policy](https://img.shields.io/badge/security-policy-red.svg)](SECURITY.md)
+[![Release](https://img.shields.io/github/v/release/Suriya-Ravichandran/amazon-india-seller-mcp?sort=semver)](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases)
 
 An MCP (Model Context Protocol) server that turns Claude Desktop into a product research
 assistant for **beginner Amazon India sellers**. It scores product opportunities, estimates
@@ -157,6 +158,7 @@ amazon-india-seller-mcp/
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
 ├── SECURITY.md                   # threat model and controls
+├── CHANGELOG.md
 ├── .github/workflows/ci.yml      # tests on Python 3.11-3.13
 ├── pyproject.toml                # Dependencies, managed by uv
 └── uv.lock
