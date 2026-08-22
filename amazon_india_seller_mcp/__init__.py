@@ -12,7 +12,7 @@ or point Claude Desktop at ``python -m amazon_india_seller_mcp``.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = ["__version__", "create_server", "main"]
 
 

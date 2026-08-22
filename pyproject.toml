@@ -1,6 +1,6 @@
 [project]
 name = "amazon-india-seller-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Amazon India product research MCP server for beginner sellers (stdio transport, Claude Desktop ready)"
 readme = "README.md"
 requires-python = ">=3.11"

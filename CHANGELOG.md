@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-08-23
+
+First release published to PyPI. Install it with `uvx amazon-india-seller-mcp`.
+
+### Fixed
+
+- The publish workflow never ran for v0.1.0 or v0.2.0. The Release workflow
+  creates the GitHub Release using `GITHUB_TOKEN`, and GitHub blocks events
+  raised by one workflow's token from starting another, so `release: published`
+  never fired. Publishing now triggers on the `v*` tag push itself.
+- Added a test asserting the version in `pyproject.toml` matches
+  `__version__`, so the two cannot drift apart between releases.
+
+### Note
+
+Package contents are identical to v0.2.0, which was tagged but never uploaded.
+
 ## [0.2.0] - 2026-08-22
 
 ### Changed
@@ -128,5 +145,6 @@ assistant for beginner Amazon India sellers — 24 tools, working with zero API 
 - SP-API and Product Advertising API providers are routed but not implemented; they
   raise a clear error rather than returning fabricated data.
 
+[0.2.1]: https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/releases/tag/v0.1.0
