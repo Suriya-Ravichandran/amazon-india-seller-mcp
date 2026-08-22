@@ -18,12 +18,22 @@ name: Publish to PyPI
 # a required reviewer there means every upload needs an explicit approval, which
 # is worth it: a PyPI version number can be yanked but never reused.
 #
-# Test the whole path against TestPyPI first by running this workflow manually
-# with "target: testpypi".
+# TestPyPI is a SEPARATE registry: to use "target: testpypi" you must register a
+# second pending publisher at https://test.pypi.org/manage/account/publishing/
+# with environment name "testpypi". A publisher on pypi.org does not work there.
+#
+# For a tag that already exists, run this workflow manually from the Actions tab
+# with "target: pypi".
 
 on:
+  # Tag push is the primary trigger. A release created by the Release workflow
+  # runs under GITHUB_TOKEN, and GitHub deliberately does not let one workflow's
+  # token trigger another - so "release: published" alone would never fire here.
+  push:
+    tags:
+      - "v*"
   release:
-    types: [published]
+    types: [published]     # covers releases created by hand in the web UI
   workflow_dispatch:
     inputs:
       target:
@@ -81,6 +91,8 @@ jobs:
 
   publish-testpypi:
     needs: build
+    # TestPyPI needs its own pending publisher registered at test.pypi.org -
+    # a publisher on pypi.org does not authorise uploads there.
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
     runs-on: ubuntu-latest
     environment: testpypi
@@ -100,7 +112,10 @@ jobs:
 
   publish-pypi:
     needs: build
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
