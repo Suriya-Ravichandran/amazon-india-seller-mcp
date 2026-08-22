@@ -9,6 +9,10 @@ Runs over **stdio**, so it plugs straight into Claude Desktop.
 
 > **New here? Start with the [Setup & Run Guide](docs/SETUP.md)** — step-by-step installation,
 > verification and Claude Desktop configuration, with a troubleshooting section.
+> For live data, see the [Live Data & Scraping Guide](docs/SCRAPING.md).
+
+**20 tools. Works with zero API keys** — in demo mode offline, or on real live data
+from free sources (Google Trends, DuckDuckGo, public amazon.in pages).
 
 ---
 
@@ -49,15 +53,26 @@ This project refuses to make up marketplace facts. Every meaningful output carri
 
 ## Features
 
-- 8 MCP tools covering the full beginner research workflow
-- 0–100 weighted opportunity scoring with a clear recommendation band
+- **20 MCP tools** covering the full seller workflow: discovery, demand, competition,
+  money, listing, sourcing and live data
+- **Free live data, no API keys**: Google Trends search interest, DuckDuckGo web
+  search, and public amazon.in pages including "bought in past month" badges
+- **Revenue and sales estimation** from BSR curves or Amazon's own purchase badges,
+  always as a range with the method stated
+- **New-seller detection**: which competitors have low review counts, and which of
+  those are already clearing 300+ units/month — the strongest signal a page is winnable
+- **Evergreen scoring** from up to 5 years of real search interest, so you avoid
+  seasonal dead stock
+- 0–100 weighted opportunity scoring, plus batch screening of up to 15 ideas at once
 - Amazon India fee maths: referral, closing, FBA / Easy Ship / Self Ship, GST on fees,
   return reserve, break-even and recommended price
-- Beginner product filter with explicit penalties for risky product traits
+- Launch planning: order quantity, budget split, ad budget, reorder point, payback
 - Review complaint clustering with concrete supplier-level fixes
-- Keyword research and a compliance-checked listing draft
+- Keyword research, listing draft and a seven-slot image plan
+- Compliance-first scraping: robots.txt, allowlist, crawl delay, page budget, and a
+  hard stop on bot challenges — **no bot-protection bypass**
 - Research history stored in SQLite or PostgreSQL
-- Full demo mode: everything works with **no paid API keys**, deterministically
+- Full demo mode: everything works offline, deterministically
 
 ---
 
@@ -77,14 +92,28 @@ Amazon-India-Product-Research-MCP/
 │   ├── supplier_search.py        # search_suppliers
 │   ├── review_analysis.py        # analyze_reviews
 │   ├── keyword_research.py       # research_keywords
-│   └── listing_generator.py      # generate_listing
+│   ├── listing_generator.py      # generate_listing
+│   ├── revenue_calculator.py     # calculate_revenue
+│   ├── competitor_analysis.py    # analyze_competitors
+│   ├── purchase_signals.py       # analyze_purchase_signals
+│   ├── review_metrics.py         # analyze_review_metrics
+│   ├── evergreen_analysis.py     # analyze_evergreen
+│   ├── product_images.py         # analyze_product_images
+│   ├── opportunity_finder.py     # find_product_opportunities
+│   ├── launch_planner.py         # plan_product_launch
+│   ├── web_search.py             # search_web
+│   └── amazon_scraper.py         # scrape_amazon_search / scrape_amazon_product / scraper_status
 │
 ├── services/                     # All business logic
 │   ├── __init__.py               # Data envelopes, errors, cache, opportunity scoring
-│   ├── amazon_service.py         # Provider abstraction, snapshots, risk, competition, reviews, listings
-│   ├── trends_service.py         # Demand, trend direction, seasonality, keywords
+│   ├── amazon_service.py         # Provider abstraction (demo / scraper / API), snapshots, risk, reviews, listings
+│   ├── trends_service.py         # Demand, trend direction, seasonality, keywords, live Google Trends
 │   ├── supplier_service.py       # Sourcing research (never fabricates suppliers)
-│   └── pricing_service.py        # Fees, profit, margin, ROI, break-even, recommended price
+│   ├── pricing_service.py        # Fees, profit, margin, ROI, break-even, recommended price
+│   ├── revenue_service.py        # Units from BSR/badges, revenue, competitor stage, evergreen scoring
+│   ├── search_service.py         # Web search (DuckDuckGo free, Brave/Serper/Tavily/Google CSE)
+│   ├── browser_service.py        # Guardrailed fetching: allowlist, robots.txt, delay, budget, block detection
+│   └── scraper_service.py        # Amazon India page parsing (search, product, reviews, bestsellers)
 │
 ├── database/                     # Research history
 │   ├── __init__.py
@@ -103,6 +132,7 @@ Amazon-India-Product-Research-MCP/
 │
 ├── docs/
 │   ├── SETUP.md                  # full setup, run and troubleshooting guide
+│   ├── SCRAPING.md               # live data sources, guardrails and compliance
 │   └── check_connection.py       # MCP connection self-test
 │
 ├── .env.example
@@ -264,16 +294,60 @@ server.py` variant is also included in the example file.
 
 ## Available MCP Tools
 
+### Discovery
+
 | Tool | What it does |
 |---|---|
-| `research_product` | Full opportunity report: category, price band, BSR, weight, rating, reviews, demand, competition, return / gating / brand risk, beginner fit, 0–100 score and recommendation |
+| `find_product_opportunities` | Screen up to 15 product ideas at once against the beginner criteria and rank them. Start here. |
+| `research_product` | Full opportunity report for one idea: category, price band, BSR, weight, rating, reviews, demand, competition, return / gating / brand risk, beginner fit, 0–100 score and recommendation |
+
+### Demand
+
+| Tool | What it does |
+|---|---|
 | `analyze_product_demand` | Monthly demand, demand level, trend direction, seasonality, confidence and a launch decision |
-| `analyze_competition` | Competition level, price and rating averages, review barrier, brand dominance, listing and image quality, weak listings, bundle / differentiation / keyword opportunities |
+| `analyze_evergreen` | Evergreen score 0–100 from up to 5 years of real search interest: stability, flatness, demand floor, growth, plus inventory guidance |
+| `analyze_purchase_signals` | Aggregates Amazon's own "X bought in past month" badges — the most reliable free sales signal there is |
+
+### Competition
+
+| Tool | What it does |
+|---|---|
+| `analyze_competition` | Competition level, price and rating averages, review barrier, brand dominance, listing and image quality, weak listings and differentiation openings |
+| `analyze_competitors` | Per-competitor units, revenue, market share, market size and concentration. Flags **new sellers** (low reviews) and who clears **300+ units/month**, then gives an entry verdict |
+| `analyze_review_metrics` | The review barrier: median and quartile review counts, months to catch up, and which listings are beatable |
+
+### Money
+
+| Tool | What it does |
+|---|---|
 | `calculate_profitability` | Referral, closing, fulfilment and GST fees, return reserve, total cost, profit, margin, ROI, break-even and recommended price, plus a plain-English explanation |
-| `search_suppliers` | Sourcing research for Parrys / Chennai / Tamil Nadu / India with verification status and a supplier vetting checklist |
-| `analyze_reviews` | Complaints grouped by theme with mention counts and concrete product fixes, plus appreciated features and differentiation angles |
+| `calculate_revenue` | Monthly and annual revenue from units, BSR or a purchase badge — as a range, with the method stated. Add `product_cost` for profit |
+| `plan_product_launch` | Order quantity, budget split (inventory / samples / photography / ads / buffer), days of cover, reorder point, affordable ad cost, payback, week-by-week timeline and warnings |
+
+### Listing
+
+| Tool | What it does |
+|---|---|
 | `research_keywords` | Primary, secondary, long-tail and related keywords, search intent, priority, backend search terms and placement guidance |
 | `generate_listing` | SEO title and alternatives, five bullets, description, backend terms, image direction, packaging advice and a compliance checklist |
+| `analyze_product_images` | Competitor gallery coverage, thin galleries you can beat, Amazon's image requirements and a seven-slot image plan |
+| `analyze_reviews` | Complaints grouped by theme with mention counts and concrete product fixes, plus appreciated features and differentiation angles |
+
+### Sourcing
+
+| Tool | What it does |
+|---|---|
+| `search_suppliers` | Sourcing research for Parrys / Chennai / Tamil Nadu / India with verification status and a vetting checklist. Never invents suppliers |
+
+### Live data
+
+| Tool | What it does |
+|---|---|
+| `search_web` | Web search via DuckDuckGo (free, no key) or Brave / Serper / Tavily / Google CSE |
+| `scrape_amazon_search` | Live amazon.in search results: ASIN, price, rating, review count, purchase badge, sponsored flag |
+| `scrape_amazon_product` | Live product page: BSR, weight, seller, bullets, full image gallery, plus a sales estimate |
+| `scraper_status` | What the live-data layer is configured to do, and anything blocking it |
 
 ### Opportunity scoring
 
@@ -301,20 +375,35 @@ server.py` variant is also included in the example file.
 ```text
 Find beginner-friendly Amazon India products under ₹20,000 investment.
 
+Screen these ideas and rank them: sink strainer, cable organizer, spice rack.
+
 Analyze the demand for silicone sink strainers on Amazon India.
+
+Is a silicone sink strainer an evergreen product or seasonal?
+
+How many units are competitors selling for "cable organizer"?
+
+Are any new sellers succeeding in the kitchen drawer organizer market?
+
+What revenue would a ₹399 product at BSR 3,500 make per month?
 
 Calculate the profit for a ₹399 product that costs ₹120.
 
-Find suppliers for cable organizers in Chennai or Tamil Nadu.
+Plan a ₹20,000 launch for a ₹399 sink strainer that costs ₹120.
 
-Analyze the competition for kitchen drawer organizers.
+Find suppliers for cable organizers in Chennai or Tamil Nadu.
 
 Find customer complaints about manual soap dispensers.
 
-Research keywords for a reusable silicone food storage bag.
-
 Generate an Amazon India listing for a reusable silicone food storage bag.
+
+Scrape live Amazon India results for "silicone sink strainer".
+
+Check the scraper status.
 ```
+
+A natural workflow: *screen ideas → check demand and evergreen → check competitors and
+new sellers → calculate profit → plan the launch → research keywords → generate the listing.*
 
 ---
 
@@ -330,6 +419,39 @@ With `DEMO_MODE=true` (the default) every tool works without a single paid API k
 
 Demo mode is for learning the workflow and testing the integration. **Never make a purchase
 decision on demo numbers.**
+
+---
+
+## Live Data on Free Sources (no API keys)
+
+Everything below is free and needs no API key:
+
+```bash
+uv sync --extra realtime --extra browser
+uv run playwright install chromium     # only for render=true
+```
+
+```ini
+APP_ENV=production
+DEMO_MODE=false
+PRODUCT_DATA_PROVIDER=scraper
+GOOGLE_TRENDS_ENABLED=true
+WEB_SEARCH_PROVIDER=duckduckgo
+BROWSER_ENABLED=true
+BROWSER_ALLOWED_DOMAINS=amazon.in
+BROWSER_MIN_DELAY_SECONDS=8
+```
+
+| Source | Gives you | Reliability |
+|---|---|---|
+| Google Trends | Real India search interest, seasonality, evergreen scoring | High |
+| DuckDuckGo | Live web search for competitors, suppliers, prices | High |
+| amazon.in pages | Prices, ASINs, ratings, review counts, purchase badges | Intermittent |
+
+Amazon serves bot challenges to automated traffic. This server **detects and stops**
+on them rather than bypassing them, so scraping works opportunistically. Read
+[docs/SCRAPING.md](docs/SCRAPING.md) before enabling it — it covers robots.txt vs
+Terms of Service, the guardrails, and how to fix selectors without touching code.
 
 ---
 
@@ -356,7 +478,7 @@ is not implemented here.
 ## Testing
 
 ```bash
-uv run pytest                      # whole suite (60 tests)
+uv run pytest                      # whole suite (119 tests)
 uv run pytest -v                   # verbose
 uv run pytest tests/test_profit_calculator.py
 uv run docs/check_connection.py    # end-to-end MCP connection self-test
@@ -364,8 +486,13 @@ uv run docs/check_connection.py    # end-to-end MCP connection self-test
 
 Coverage includes product research, opportunity scoring bands and weights, demand analysis
 and seasonality, competition analysis, the full profit maths (break-even and recommended
-price are verified by recomputation), fee-schedule configurability, invalid input handling
-for every tool, and demo-mode determinism.
+price are verified by recomputation), fee-schedule configurability, revenue and BSR-curve
+estimation, new-seller and volume-target classification, evergreen scoring, every scraping
+guardrail (allowlist, robots, page budget, bot-challenge detection), HTML parsing helpers,
+invalid input handling for every tool, and demo-mode determinism.
+
+The suite is fully offline: live Google Trends, web search and page fetching are forced
+off so results stay deterministic.
 
 The suite forces demo mode, disables caching and disables history persistence, so it never
 touches your research database.
@@ -406,12 +533,12 @@ the MCP log files (`%APPDATA%\Claude\logs` on Windows, `~/Library/Logs/Claude` o
 ## Roadmap
 
 - Real SP-API and Product Advertising API providers with request signing
-- A live search-trends provider behind `GOOGLE_TRENDS_ENABLED`
-- Batch product screening (research a list of ideas and rank them)
 - Historical tracking: price, BSR and rating trends from stored research
 - MCP resources exposing saved research history back to Claude
 - FBA storage and advertising cost modelling (ACOS-aware break-even)
 - Category-level gating and certification (BIS / FSSAI) reference data
+- Calibrating the BSR-to-units curves against real seller sales data
+- Bestseller-list mining for proven-demand product discovery
 
 ---
 

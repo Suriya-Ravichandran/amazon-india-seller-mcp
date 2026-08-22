@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SERVER_PATH = PROJECT_ROOT / "server.py"
 
 EXPECTED_TOOLS = {
+    # Core research
     "research_product",
     "analyze_product_demand",
     "analyze_competition",
@@ -35,6 +36,21 @@ EXPECTED_TOOLS = {
     "analyze_reviews",
     "research_keywords",
     "generate_listing",
+    # Sales, revenue and competitor intelligence
+    "calculate_revenue",
+    "analyze_competitors",
+    "analyze_purchase_signals",
+    "analyze_review_metrics",
+    "analyze_evergreen",
+    "analyze_product_images",
+    # Discovery and planning
+    "find_product_opportunities",
+    "plan_product_launch",
+    # Live data
+    "search_web",
+    "scrape_amazon_search",
+    "scrape_amazon_product",
+    "scraper_status",
 }
 
 

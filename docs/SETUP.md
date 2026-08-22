@@ -28,11 +28,14 @@ Every command in this guide was executed against this project on Windows 11 with
 13. [Troubleshooting](#13-troubleshooting)
 14. [Reset and uninstall](#14-reset-and-uninstall)
 
+> Enabling live data? Read the [Live Data & Scraping Guide](SCRAPING.md) alongside
+> section 11 of this document.
+
 ---
 
 ## 1. What you are setting up
 
-An MCP server that gives Claude Desktop eight Amazon India product research tools. You will:
+An MCP server that gives Claude Desktop **20 Amazon India product research tools**. You will:
 
 ```text
 install uv  ->  uv sync  ->  copy .env  ->  verify  ->  edit Claude Desktop config  ->  restart Claude
@@ -111,6 +114,18 @@ Installed 40 packages in 1.23s
 
 You never need to activate the virtualenv — `uv run <command>` uses it automatically.
 
+### Optional extras (only for live data)
+
+The base install runs every tool in demo mode. Two extras unlock live data, both free:
+
+```bash
+uv sync --extra realtime            # Google Trends + DuckDuckGo search (no API keys)
+uv sync --extra browser             # Playwright + selectolax for scraping amazon.in
+uv run playwright install chromium  # only needed for render=true
+
+uv sync --extra realtime --extra browser   # both at once
+```
+
 > **Do not** run `pip install` in this project. uv owns the environment; mixing the two
 > causes drift between what is installed and what `uv.lock` records. Use `uv add <package>`
 > to add a dependency and `uv remove <package>` to drop one.
@@ -163,12 +178,13 @@ Expected:
 
 ```text
 ............................................................             [100%]
-60 passed in 1.01s
+119 passed in 1.22s
 ```
 
 This covers profit maths, opportunity scoring, demand and seasonality, competition analysis,
-invalid input handling and demo determinism. The suite forces demo mode and never writes to
-your research database.
+revenue and BSR estimation, new-seller classification, evergreen scoring, every scraping
+guardrail, HTML parsing, invalid input handling and demo determinism. The suite runs fully
+offline and never writes to your research database.
 
 ### 5.2 Start the server manually
 
@@ -179,13 +195,14 @@ uv run server.py
 Expected:
 
 ```text
-2026-08-22 19:15:24 | INFO     | amazon_product_mcp | amazon-product-research ready | env=development | demo_mode=True | provider=demo | tools=8
+2026-08-22 19:15:24 | INFO     | amazon_product_mcp | amazon-product-research ready | env=production | demo_mode=False | provider=scraper | trends=True | search=duckduckgo | browser=True | modules=18
 2026-08-22 19:15:24 | WARNING  | amazon_product_mcp | DEMO MODE is active: marketplace figures are deterministic samples, not real Amazon data.
 2026-08-22 19:15:24 | INFO     | amazon_product_mcp | Database ready at sqlite:///.../amazon_product_mcp.db
 ```
 
 Then it appears to hang. **That is correct.** An MCP server communicates over stdin/stdout
-and is waiting for a client to speak to it. Seeing `tools=8` means everything registered.
+and is waiting for a client to speak to it. The startup line tells you which data sources are
+active.
 
 Press `Ctrl+C` to stop it.
 
@@ -202,7 +219,7 @@ Expected:
 
 ```text
 PASS  handshake       server 'amazon-product-research', protocol 2025-11-25
-PASS  tool listing    all 8 tools registered
+PASS  tool listing    all 20 tools registered
 PASS  profit call     profit Rs.146.4, margin 36.69%, data_type Estimated
 PASS  research call   score 73/100 (Good Opportunity), data_type Demo
 PASS  error handling  invalid input rejected cleanly (invalid_input)
@@ -344,21 +361,29 @@ margin. You are done.
 Prompts that map cleanly onto the eight tools:
 
 ```text
+Screen these ideas and rank them: sink strainer, cable organizer, spice rack.
+
 Research silicone sink strainers on Amazon India and score the opportunity.
 
-Analyze the demand for silicone sink strainers on Amazon India.
+Is a silicone sink strainer evergreen or seasonal?
 
-Analyze the competition for kitchen drawer organizers.
+How many units are competitors selling for "cable organizer"?
+
+Are any new sellers succeeding in the kitchen drawer organizer market?
+
+What revenue would a ₹399 product at BSR 3,500 make per month?
 
 Calculate the profit for a ₹399 product that costs ₹120.
+
+Plan a ₹20,000 launch for a ₹399 sink strainer that costs ₹120.
 
 Find suppliers for cable organizers in Chennai or Tamil Nadu.
 
 Find customer complaints about manual soap dispensers.
 
-Research keywords for a reusable silicone food storage bag.
-
 Generate an Amazon India listing for a reusable silicone food storage bag.
+
+Scrape live Amazon India results for "silicone sink strainer".
 ```
 
 You can also chain them naturally — *"Research cable organizers, then if the score is above
@@ -366,14 +391,29 @@ You can also chain them naturally — *"Research cable organizers, then if the s
 
 | Tool | Answers |
 |---|---|
-| `research_product` | Is this product idea worth pursuing? (0–100 score) |
+| `find_product_opportunities` | Which of these ideas is worth my time? (screens up to 15) |
+| `research_product` | Is this one idea worth pursuing? (0–100 score) |
 | `analyze_product_demand` | Do enough people want it, and is it seasonal? |
+| `analyze_evergreen` | Will this still sell all year, or only in one season? |
+| `analyze_purchase_signals` | How much is actually being bought right now? |
 | `analyze_competition` | How hard is it to break in, and where is the gap? |
+| `analyze_competitors` | Who am I up against, and are new sellers winning here? |
+| `analyze_review_metrics` | How many reviews do I need to compete? |
 | `calculate_profitability` | Do I actually make money at this price? |
-| `search_suppliers` | Where do I source it, and how do I vet the supplier? |
-| `analyze_reviews` | What do buyers complain about that I can fix? |
+| `calculate_revenue` | What monthly revenue and profit would this produce? |
+| `plan_product_launch` | How many units do I order, and what does the budget look like? |
 | `research_keywords` | What terms should the listing target? |
 | `generate_listing` | Write the title, bullets, description and image brief |
+| `analyze_product_images` | How good is competitor imagery, and what should mine show? |
+| `analyze_reviews` | What do buyers complain about that I can fix? |
+| `search_suppliers` | Where do I source it, and how do I vet the supplier? |
+| `search_web` | What does the wider web say about this product or supplier? |
+| `scrape_amazon_search` | What is actually on the Amazon India search page right now? |
+| `scrape_amazon_product` | What are this ASIN's BSR, weight, images and seller? |
+| `scraper_status` | Is live data switched on, and what is blocking it? |
+
+**A natural workflow:** screen ideas → check demand and evergreen → check competitors and
+new sellers → calculate profit → plan the launch → research keywords → generate the listing.
 
 ---
 
@@ -441,6 +481,36 @@ Claude Desktop config. Values set in Claude Desktop's `env` block win over `.env
 | `GOOGLE_TRENDS_ENABLED` | `false` | Enable a trends provider (none ships with the project) |
 | `SUPPLIER_API_KEY` / `SUPPLIER_API_BASE_URL` | empty | Supplier data provider |
 
+### Live data (all free, no API key)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GOOGLE_TRENDS_ENABLED` | `false` | Real India search interest via pytrends; powers demand, seasonality and evergreen scoring |
+| `WEB_SEARCH_PROVIDER` | `demo` | `duckduckgo` (free, keyless), `brave`, `serper`, `tavily`, `google_cse` |
+| `WEB_SEARCH_API_KEY` | empty | Only for the keyed providers |
+| `WEB_SEARCH_CX` | empty | Google Programmable Search engine id |
+
+### Browser / scraping layer
+
+Read [SCRAPING.md](SCRAPING.md) before enabling any of this.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BROWSER_ENABLED` | `false` | Master switch; nothing is fetched while false |
+| `BROWSER_ALLOWED_DOMAINS` | empty | Comma-separated hostnames you may fetch; empty blocks everything |
+| `BROWSER_RESPECT_ROBOTS` | `true` | Enforce robots.txt |
+| `BROWSER_MIN_DELAY_SECONDS` | `5` | Crawl delay per host |
+| `BROWSER_MAX_PAGES_PER_RUN` | `20` | Page budget per research run |
+| `BROWSER_USER_AGENT` | empty | Identify yourself; blank uses a standard Chromium UA |
+| `BROWSER_SELECTORS_PATH` | empty | JSON selector overrides, to fix parsing without code changes |
+
+### Analysis thresholds
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MIN_MONTHLY_UNITS_TARGET` | `300` | Volume a competitor must clear to count as a real seller |
+| `NEW_SELLER_REVIEW_THRESHOLD` | `50` | At or below this review count, treat a competitor as a new seller |
+
 ### Storage and performance
 
 | Variable | Default | Purpose |
@@ -468,6 +538,28 @@ numbers.
 
 Demo mode exists so you can learn the workflow for free. Before making real purchase
 decisions, replace the estimated inputs in this order.
+
+### Step 0 — Switch on free live data (no API keys, 2 minutes)
+
+```bash
+uv sync --extra realtime --extra browser
+```
+
+```ini
+APP_ENV=production
+DEMO_MODE=false
+PRODUCT_DATA_PROVIDER=scraper
+GOOGLE_TRENDS_ENABLED=true
+WEB_SEARCH_PROVIDER=duckduckgo
+BROWSER_ENABLED=true
+BROWSER_ALLOWED_DOMAINS=amazon.in
+BROWSER_MIN_DELAY_SECONDS=8
+```
+
+That gives you real Google Trends demand data, real web search, and live amazon.in
+prices and purchase badges — for nothing. Amazon serves bot challenges intermittently
+and this server stops rather than bypassing them, so treat Amazon scraping as a bonus
+on top of dependable Trends data. See [SCRAPING.md](SCRAPING.md).
 
 ### Step 1 — Use your real fee card (biggest accuracy win, no API needed)
 
@@ -624,6 +716,26 @@ uv run pytest -v          # see which test and which assertion
 uv sync                   # restore the exact locked dependency set
 ```
 
+### Live data errors
+
+| Error | Meaning | Fix |
+|---|---|---|
+| `browser_disabled` | Scraping layer is off | `BROWSER_ENABLED=true` |
+| `domain_not_allowed` | Host is not allowlisted | Add it to `BROWSER_ALLOWED_DOMAINS` |
+| `robots_disallowed` | robots.txt forbids the path | Use the official API instead |
+| `blocked_by_site` | Amazon served a bot challenge | Stop, raise the delay, or use a licensed API. This server never bypasses challenges |
+| `page_budget_exceeded` | Hit the per-run page cap | Raise `BROWSER_MAX_PAGES_PER_RUN` |
+| `playwright_not_installed` | `render=true` needs Chromium | `uv sync --extra browser && uv run playwright install chromium` |
+| `insufficient_data` | Page fetched, nothing parsed | Check `field_coverage`; update selectors via `BROWSER_SELECTORS_PATH` |
+
+Ask Claude *"check the scraper status"* for a live diagnosis of what is blocking it.
+
+### Google Trends returns nothing
+
+Normal — it is an unofficial, aggressively rate-limited endpoint. The server falls back
+to its internal model and labels the result `Estimated` instead of `Live`. Wait a few
+minutes, or confirm `uv sync --extra realtime` has been run.
+
 ### Getting more detail from any failure
 
 Add to the Claude Desktop `env` block, then fully restart Claude:
@@ -666,6 +778,7 @@ uv sync
 - [`../.env.example`](../.env.example) — every configuration variable with comments
 - [`../mcp.json.example`](../mcp.json.example) — Claude Desktop config variants
 - [`check_connection.py`](check_connection.py) — the connection self-test used in section 5.3
+- [`SCRAPING.md`](SCRAPING.md) — live data sources, scraping guardrails and compliance
 
 **A reminder before you spend money:** demand, sales and profitability figures are estimates
 based on your inputs and the configured fee schedule, not guarantees. Verify fees in Seller

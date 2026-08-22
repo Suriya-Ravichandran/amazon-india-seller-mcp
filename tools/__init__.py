@@ -16,7 +16,11 @@ from pydantic import ValidationError
 from config.settings import Settings, get_settings
 from services import ServiceError, utc_now_iso
 from services.amazon_service import AmazonService
+from services.browser_service import BrowserService
 from services.pricing_service import PricingService
+from services.revenue_service import RevenueService
+from services.scraper_service import AmazonScraperService
+from services.search_service import SearchService
 from services.supplier_service import SupplierService
 from services.trends_service import TrendsService
 
@@ -38,16 +42,25 @@ class ServiceBundle:
     trends: TrendsService
     supplier: SupplierService
     pricing: PricingService
+    revenue: RevenueService
+    search: SearchService
+    browser: BrowserService
+    scraper: AmazonScraperService
 
     @classmethod
     def create(cls, settings: Settings | None = None) -> "ServiceBundle":
         settings = settings or get_settings()
+        browser = BrowserService(settings)
         return cls(
             settings=settings,
             amazon=AmazonService(settings),
             trends=TrendsService(settings),
             supplier=SupplierService(settings),
             pricing=PricingService(settings),
+            revenue=RevenueService(settings),
+            search=SearchService(settings),
+            browser=browser,
+            scraper=AmazonScraperService(settings, browser=browser),
         )
 
 
