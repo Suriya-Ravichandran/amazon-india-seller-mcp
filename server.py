@@ -27,20 +27,31 @@ from config.settings import Settings, configure_logging, get_settings  # noqa: E
 from database.models import init_db  # noqa: E402
 from tools import ServiceBundle  # noqa: E402
 from tools import (  # noqa: E402
+    amazon_scraper,
     competition,
+    competitor_analysis,
     demand_analysis,
+    evergreen_analysis,
     keyword_research,
+    launch_planner,
     listing_generator,
+    opportunity_finder,
+    product_images,
     product_research,
     profit_calculator,
+    purchase_signals,
+    revenue_calculator,
     review_analysis,
+    review_metrics,
     supplier_search,
+    web_search,
 )
 
 logger = logging.getLogger("amazon_product_mcp")
 
 SERVER_NAME = "amazon-product-research"
 TOOL_MODULES = (
+    # Core research
     product_research,
     demand_analysis,
     competition,
@@ -49,6 +60,19 @@ TOOL_MODULES = (
     review_analysis,
     keyword_research,
     listing_generator,
+    # Sales, revenue and competitor intelligence
+    revenue_calculator,
+    competitor_analysis,
+    purchase_signals,
+    review_metrics,
+    evergreen_analysis,
+    product_images,
+    # Discovery and planning
+    opportunity_finder,
+    launch_planner,
+    # Live data
+    web_search,
+    amazon_scraper,
 )
 
 SERVER_INSTRUCTIONS = """
@@ -56,9 +80,14 @@ Amazon India product research for beginner sellers (investment ₹5,000-₹20,00
 selling price ₹199-₹699, under 500 g, 30%+ target margin, non-seasonal daily-use
 products).
 
-Available tools: research_product, analyze_product_demand, analyze_competition,
-calculate_profitability, search_suppliers, analyze_reviews, research_keywords,
-generate_listing.
+Tools, grouped by job:
+- Discovery: find_product_opportunities (screen many ideas), research_product
+- Demand: analyze_product_demand, analyze_evergreen, analyze_purchase_signals
+- Competition: analyze_competition, analyze_competitors, analyze_review_metrics
+- Money: calculate_profitability, calculate_revenue, plan_product_launch
+- Listing: research_keywords, generate_listing, analyze_product_images, analyze_reviews
+- Sourcing: search_suppliers
+- Live data: search_web, scrape_amazon_search, scrape_amazon_product, scraper_status
 
 Data integrity rules when presenting results to the user:
 - Always repeat the source, data_type and confidence fields. Data types are
@@ -69,6 +98,12 @@ Data integrity rules when presenting results to the user:
   maths based on the inputs and the configured fee schedule.
 - Supplier names, prices and MOQs are never invented. If supplier data is
   unavailable, say so and use the returned public sourcing channels instead.
+- Unit and revenue figures modelled from BSR are wide estimates: quote the
+  range, not the midpoint. Amazon's own "bought in past month" badge is the
+  stronger signal when present.
+- Scraping tools honour robots.txt, an allowlist, a crawl delay and a page
+  budget, and stop when a site blocks them. They never bypass bot protection.
+  If a scrape is blocked, tell the user to slow down or use a licensed API.
 """.strip()
 
 
@@ -84,11 +119,14 @@ def create_server(settings: Settings | None = None) -> "MCPServerClass":
         module.register(mcp, services)
 
     logger.info(
-        "%s ready | env=%s | demo_mode=%s | provider=%s | tools=%d",
+        "%s ready | env=%s | demo_mode=%s | provider=%s | trends=%s | search=%s | browser=%s | modules=%d",
         SERVER_NAME,
         settings.app_env,
         settings.is_demo,
         settings.product_data_provider,
+        settings.google_trends_enabled,
+        settings.web_search_provider,
+        settings.browser_enabled,
         len(TOOL_MODULES),
     )
     if settings.is_demo:

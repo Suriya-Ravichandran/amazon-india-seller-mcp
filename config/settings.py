@@ -16,7 +16,7 @@ import logging
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -224,24 +224,83 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 900
     http_timeout_seconds: float = 20.0
 
+    # Web search provider (for search_web)
+    web_search_provider: str = "demo"          # demo | brave | serper | tavily | google_cse
+    web_search_api_key: str | None = None
+    web_search_base_url: str | None = None
+    web_search_cx: str | None = None           # Google Programmable Search engine id
+
+    # Browser / scraping layer (opt in, off by default)
+    browser_enabled: bool = False
+    browser_headless: bool = True
+    browser_timeout_seconds: float = 30.0
+    # Comma separated hostnames this server is permitted to fetch. Empty = nothing
+    # is allowed. You are responsible for having the right to access each domain.
+    browser_allowed_domains: str = ""
+    browser_respect_robots: bool = True
+    browser_min_delay_seconds: float = 5.0     # polite crawl delay per domain
+    browser_max_pages_per_run: int = 20
+    browser_user_agent: str | None = None      # identify yourself honestly; None = real Chromium UA
+    browser_selectors_path: str | None = None  # JSON file of CSS selectors per domain
+
+    # Sales / competitor analysis thresholds
+    min_monthly_units_target: int = 300        # a competitor must clear this to count as a real seller
+    new_seller_review_threshold: int = 50      # at or below this review count, treat as a new seller
+    new_seller_age_months: int = 6
+
     # Fee configuration
     amazon_fee_config_path: str | None = None
 
-    @field_validator("product_data_provider")
+    @field_validator("product_data_provider", "web_search_provider")
     @classmethod
     def _normalise_provider(cls, value: str) -> str:
         return value.strip().lower() or "demo"
 
+    # Providers that fetch real data without needing an API key.
+    KEYLESS_PROVIDERS: ClassVar[set[str]] = {"scraper", "amazon-scraper", "browser"}
+
     @property
     def is_demo(self) -> bool:
-        """Demo mode is on when explicitly requested or when no provider is configured."""
+        """Demo mode is on when explicitly requested, or when no usable provider is configured."""
         if self.demo_mode:
             return True
-        return self.product_data_provider == "demo" or not self.product_data_api_key
+        if self.product_data_provider == "demo":
+            return True
+        if self.product_data_provider in self.KEYLESS_PROVIDERS:
+            return False
+        return not self.product_data_api_key
 
     @property
     def beginner_criteria(self) -> BeginnerCriteria:
         return BeginnerCriteria()
+
+    @property
+    def allowed_domains(self) -> set[str]:
+        """Hostnames the browser layer may fetch, lower-cased."""
+        return {
+            domain.strip().lower().removeprefix("www.")
+            for domain in self.browser_allowed_domains.split(",")
+            if domain.strip()
+        }
+
+    @property
+    def browser_selectors(self) -> dict[str, dict[str, str]]:
+        """Per-domain CSS selector map loaded from BROWSER_SELECTORS_PATH.
+
+        Selectors are configuration, not code: page markup changes often, and
+        every operator scrapes a different set of sources.
+        """
+        if not self.browser_selectors_path:
+            return {}
+        path = Path(self.browser_selectors_path)
+        if not path.is_file():
+            logger.warning("BROWSER_SELECTORS_PATH %s not found; no selectors loaded", path)
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - bad config must not crash startup
+            logger.exception("Invalid selector config at %s", path)
+            return {}
 
     @property
     def fee_schedule(self) -> FeeSchedule:

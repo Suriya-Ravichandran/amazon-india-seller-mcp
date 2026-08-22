@@ -13,6 +13,16 @@ dependencies = [
     "python-dotenv>=1.0",
 ]
 
+[project.optional-dependencies]
+realtime = [
+    "ddgs>=9.15.0",
+    "pytrends>=4.9",
+]
+browser = [
+    "playwright>=1.40",
+    "selectolax>=0.3.21",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

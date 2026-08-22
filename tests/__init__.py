@@ -16,6 +16,13 @@ os.environ.setdefault("PERSIST_RESEARCH", "false")
 os.environ.setdefault("CACHE_ENABLED", "false")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+# The suite must not depend on the network: live Google Trends, web search and
+# page fetching are all forced off so results stay deterministic.
+os.environ["GOOGLE_TRENDS_ENABLED"] = "false"
+os.environ["WEB_SEARCH_PROVIDER"] = "demo"
+os.environ["BROWSER_ENABLED"] = "false"
+os.environ["PRODUCT_DATA_PROVIDER"] = "demo"
+
 T = TypeVar("T")
 
 

@@ -8,6 +8,7 @@ never ``Live``.
 from __future__ import annotations
 
 import logging
+import statistics
 from typing import Any
 
 from config.settings import Settings, get_settings
@@ -69,30 +70,90 @@ INTENT_HINTS: tuple[tuple[str, str], ...] = (
 
 
 class TrendsService:
-    """Estimate demand level, trend direction, seasonality and keyword sets."""
+    """Estimate demand level, trend direction, seasonality and keyword sets.
+
+    With ``GOOGLE_TRENDS_ENABLED=true`` the service pulls **real** search
+    interest from Google Trends (free, no API key, via ``pytrends``) and labels
+    the result ``Live``. Without it, an internal model produces ``Estimated``
+    values. The two are never confused for one another.
+    """
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self._cache = TTLCache(self.settings.cache_ttl_seconds, self.settings.cache_enabled)
 
+    # -- live google trends ----------------------------------------------- #
+    async def fetch_interest_over_time(
+        self, keyword: str, timeframe: str = "today 12-m", geo: str = "IN"
+    ) -> dict[str, Any] | None:
+        """Fetch real Google Trends interest. Returns ``None`` when unavailable.
+
+        Free and keyless, but unofficial: Google rate limits aggressively, so a
+        failure here is normal and callers fall back to the internal model.
+        """
+        if not self.settings.google_trends_enabled:
+            return None
+
+        cache_key = f"gtrends::{keyword}::{timeframe}::{geo}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        import asyncio  # noqa: PLC0415
+
+        def _run() -> dict[str, Any] | None:
+            try:
+                from pytrends.request import TrendReq  # noqa: PLC0415
+            except ImportError:
+                logger.warning(
+                    "GOOGLE_TRENDS_ENABLED is true but pytrends is not installed "
+                    "(`uv sync --extra realtime`); using the internal model instead."
+                )
+                return None
+            try:
+                client = TrendReq(hl="en-IN", tz=330, timeout=(10, 25))
+                client.build_payload([keyword], timeframe=timeframe, geo=geo)
+                frame = client.interest_over_time()
+                if frame is None or frame.empty:
+                    return None
+                series = [int(value) for value in frame[keyword].tolist()]
+                dates = [str(index.date()) for index in frame.index]
+                partial = frame["isPartial"].tolist() if "isPartial" in frame else []
+                # Drop a trailing partial week - it always looks like a crash.
+                if partial and bool(partial[-1]) and len(series) > 1:
+                    series, dates = series[:-1], dates[:-1]
+                return {"keyword": keyword, "geo": geo, "timeframe": timeframe, "dates": dates, "series": series}
+            except Exception as exc:  # noqa: BLE001 - unofficial endpoint, many failure modes
+                logger.info("Google Trends unavailable for '%s': %s", keyword, type(exc).__name__)
+                return None
+
+        payload = await asyncio.to_thread(_run)
+        if payload:
+            self._cache.set(cache_key, payload)
+        return payload
+
     # -- provenance ------------------------------------------------------- #
-    def _envelope(self, extra_note: str | None = None) -> DataEnvelope:
+    def _envelope(self, extra_note: str | None = None, live: bool = False) -> DataEnvelope:
         notes: list[str] = []
-        if self.settings.google_trends_enabled:
+        if live:
+            notes.append("Search interest is live Google Trends data for India.")
+        elif self.settings.google_trends_enabled:
             notes.append(
-                "GOOGLE_TRENDS_ENABLED is set but no live trends provider is implemented; "
-                "results come from the internal estimation model."
+                "Google Trends was enabled but returned nothing (rate limit, no data, or pytrends "
+                "not installed); these values come from the internal estimation model."
             )
-        if self.settings.is_demo:
+        if self.settings.is_demo and not live:
             notes.append("Demo mode: values are deterministic samples, not real search data.")
         if extra_note:
             notes.append(extra_note)
-        return DataEnvelope(
-            source="Internal demand estimation model" if not self.settings.is_demo else "Local Demo Provider",
-            data_type=DataType.DEMO if self.settings.is_demo else DataType.ESTIMATED,
-            confidence=Confidence.LOW if self.settings.is_demo else Confidence.MEDIUM,
-            notes=" ".join(notes) or None,
-        )
+
+        if live:
+            source, data_type, confidence = "Google Trends (free, no API key)", DataType.LIVE, Confidence.MEDIUM
+        elif self.settings.is_demo:
+            source, data_type, confidence = "Local Demo Provider", DataType.DEMO, Confidence.LOW
+        else:
+            source, data_type, confidence = "Internal demand estimation model", DataType.ESTIMATED, Confidence.MEDIUM
+        return DataEnvelope(source=source, data_type=data_type, confidence=confidence, notes=" ".join(notes) or None)
 
     # -- demand ----------------------------------------------------------- #
     async def analyze_demand(
@@ -117,6 +178,17 @@ class TrendsService:
         # Marketplace signals sharpen the estimate when a snapshot is available.
         adjustment = 0.0
         signals: list[str] = ["Baseline category and keyword demand index"]
+
+        # Real Google Trends data overrides the baseline when it is available.
+        trends = await self.fetch_interest_over_time(product_name)
+        live_series: list[int] | None = None
+        if trends and trends["series"]:
+            live_series = trends["series"]
+            base_index = float(statistics.fmean(live_series))
+            signals.append(
+                f"Live Google Trends interest for India: {len(live_series)} points, "
+                f"mean {base_index:.0f}/100 over {trends['timeframe']}"
+            )
         if snapshot:
             if snapshot.bsr:
                 adjustment += 12 if snapshot.bsr < 3_000 else 5 if snapshot.bsr < 10_000 else -6
@@ -128,10 +200,17 @@ class TrendsService:
                 adjustment -= 6
                 signals.append("Low review volume suggests a thin or immature market")
 
-        demand_score = max(0.0, min(100.0, base_index + adjustment + rng.uniform(-3, 3)))
+        jitter = 0.0 if live_series else rng.uniform(-3, 3)
+        demand_score = max(0.0, min(100.0, base_index + adjustment + jitter))
         demand_level = _band(demand_score)
-        trend_direction, trend_note = _trend_direction(product_name, rng)
-        season_label, peak_months, seasonality_risk = _seasonality(product_name)
+        if live_series:
+            trend_direction, trend_note = _trend_from_series(live_series)
+            season_label, peak_months, seasonality_risk = _seasonality_from_series(
+                live_series, trends["dates"], product_name
+            )
+        else:
+            trend_direction, trend_note = _trend_direction(product_name, rng)
+            season_label, peak_months, seasonality_risk = _seasonality(product_name)
         monthly_units = _monthly_demand(demand_score, snapshot)
         search_volume = _search_volume(demand_score)
 
@@ -157,9 +236,21 @@ class TrendsService:
             "estimated_monthly_search_interest": search_volume,
             "estimated_monthly_demand_units": monthly_units,
             "signals_used": signals,
-            "confidence": confidence.value,
+            "confidence": (Confidence.HIGH if live_series else confidence).value,
+            "interest_over_time": (
+                {
+                    "source": "Google Trends (live, free, no API key)",
+                    "geo": trends["geo"],
+                    "timeframe": trends["timeframe"],
+                    "dates": trends["dates"],
+                    "series": live_series,
+                }
+                if live_series
+                else None
+            ),
             **self._envelope(
-                "Monthly demand is a modelled estimate, not measured Amazon sales data."
+                "Monthly demand is a modelled estimate, not measured Amazon sales data.",
+                live=bool(live_series),
             ).as_dict(),
         }
         self._cache.set(cache_key, result)
@@ -331,3 +422,72 @@ def _keyword_row(keyword: str, group: str, rng, salt: int) -> dict[str, Any]:
         "priority": "High" if priority > 90 else "Medium" if priority > 35 else "Low",
         "data_type": DataType.ESTIMATED.value,
     }
+
+
+def _trend_from_series(series: list[int]) -> tuple[str, str]:
+    """Trend direction from the real interest series: recent half vs earlier half."""
+    half = len(series) // 2
+    earlier = statistics.fmean(series[:half]) or 1.0
+    recent = statistics.fmean(series[half:])
+    change = (recent - earlier) / earlier
+    if change > 0.15:
+        return "Rising", f"Live search interest is up {change * 100:.0f}% versus the earlier half of the period."
+    if change < -0.15:
+        return "Declining", f"Live search interest is down {abs(change) * 100:.0f}% versus the earlier half."
+    return "Stable", f"Live search interest is flat ({change * 100:+.0f}% half over half)."
+
+
+def _seasonality_from_series(
+    series: list[int], dates: list[str], product_name: str
+) -> tuple[str, list[str], str]:
+    """Detect seasonality from the real series, grouping interest by calendar month."""
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    buckets: dict[int, list[int]] = {}
+    for date_str, value in zip(dates, series):
+        try:
+            month = int(date_str.split("-")[1])
+        except (IndexError, ValueError):
+            continue
+        buckets.setdefault(month, []).append(value)
+    if len(buckets) < 6:
+        return _seasonality(product_name)
+
+    averages = {month: statistics.fmean(values) for month, values in buckets.items()}
+    overall = statistics.fmean(averages.values()) or 1.0
+    peak_ratio = max(averages.values()) / overall
+    peak_months = [months[month - 1] for month, value in sorted(averages.items()) if value >= overall * 1.25]
+
+    if peak_ratio >= 2.0:
+        risk, label = "Very High", "Strongly seasonal"
+    elif peak_ratio >= 1.5:
+        risk, label = "High", "Seasonal"
+    elif peak_ratio >= 1.25:
+        risk, label = "Medium", "Mildly seasonal"
+    else:
+        risk, label = "Low", "Year-round"
+    return label, peak_months or months, risk
+
+
+def synthetic_interest_series(product_name: str, months: int = 36) -> list[int]:
+    """A deterministic stand-in interest series for offline / demo use.
+
+    Shaped by the same seasonality table the estimation model uses, so a
+    seasonal keyword still looks seasonal. Clearly not real measurement.
+    """
+    rng = deterministic_rng("series", product_name, str(months))
+    base = float(demand_index_for(product_name))
+    _, peak_months, risk = _seasonality(product_name)
+    peak_indexes = {
+        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].index(month)
+        for month in peak_months
+        if month in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    }
+    amplitude = {"Very High": 1.6, "High": 1.0, "Medium": 0.45}.get(risk, 0.0)
+    series: list[int] = []
+    for index in range(months):
+        month = index % 12
+        seasonal = amplitude if month in peak_indexes and len(peak_indexes) < 12 else 0.0
+        drift = (index / max(1, months)) * 0.12
+        value = base * (1 + seasonal + drift) * rng.uniform(0.9, 1.1)
+        series.append(int(max(1, min(100, value))))
+    return series

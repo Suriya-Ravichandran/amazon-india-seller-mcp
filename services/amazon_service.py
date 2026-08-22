@@ -58,6 +58,11 @@ class ProductListing(BaseModel):
     title_length: int = 0
     fulfillment: str = "FBA"
     listing_quality_score: float = 0.0
+    quality_known: bool = True          # False when the source cannot see images/bullets
+    asin: str | None = None
+    bought_past_month: int | None = None
+    image_urls: list[str] = Field(default_factory=list)
+    is_sponsored: bool = False
 
 
 class ProductSnapshot(BaseModel):
@@ -239,6 +244,13 @@ class DemoProductDataProvider(ProductDataProvider):
                 has_aplus_content=rng.random() < 0.3,
                 title_length=rng.randint(45, 190),
                 fulfillment=rng.choice(["FBA", "FBA", "Easy Ship", "Self Ship"]),
+                asin=f"B0{rng.randint(10**7, 10**8 - 1)}",
+                # Amazon shows this badge only on faster-moving listings.
+                bought_past_month=(
+                    rng.choice([50, 100, 200, 300, 500, 1000, 2000]) if rng.random() < 0.55 else None
+                ),
+                image_urls=[f"https://demo.invalid/{keyword.replace(' ', '-')}-{index}-{n}.jpg" for n in range(image_count)],
+                is_sponsored=rng.random() < 0.2,
             )
             listing.listing_quality_score = _listing_quality(listing)
             listings.append(listing)
@@ -335,8 +347,102 @@ class HttpProductDataProvider(ProductDataProvider):
         return reviews
 
 
+class ScraperProductDataProvider(ProductDataProvider):
+    """Live Amazon India data from the public pages, via the guardrailed browser layer.
+
+    This is the zero-API-key route to real data. It inherits every guardrail in
+    :mod:`services.browser_service`: allowlist, robots.txt, crawl delay, page
+    budget, and a hard stop when the site blocks the request.
+    """
+
+    name = "amazon.in public pages (scraped)"
+    data_type = DataType.LIVE
+    confidence = Confidence.MEDIUM
+
+    def __init__(self, settings: Settings) -> None:
+        from services.scraper_service import AmazonScraperService  # noqa: PLC0415 - avoids a cycle
+
+        self.settings = settings
+        self.scraper = AmazonScraperService(settings)
+
+    async def search_listings(self, keyword: str, marketplace: str, limit: int) -> list[ProductListing]:
+        pages = 1 if limit <= 20 else 2
+        payload = await self.scraper.scrape_search(keyword, pages=pages)
+        category = infer_category(keyword)
+        listings: list[ProductListing] = []
+        for row in payload["listings"][:limit]:
+            if not row.get("price"):
+                continue  # No price means nothing downstream can be computed honestly.
+            title = row.get("title") or keyword
+            listings.append(
+                ProductListing(
+                    title=title,
+                    brand=_brand_from_title(title),
+                    is_branded=any(token in title.lower() for token in BRAND_TOKENS),
+                    price=float(row["price"]),
+                    rating=float(row.get("rating") or 0.0),
+                    review_count=int(row.get("review_count") or 0),
+                    bsr=None,                      # BSR lives on the product page, not the search page
+                    weight_grams=None,
+                    category=category,
+                    image_count=1 if row.get("image_url") else 0,
+                    bullet_count=0,
+                    title_length=len(title),
+                    fulfillment="Unknown",
+                    quality_known=False,           # a search page cannot show images/bullets/A+
+                    asin=row.get("asin"),
+                    bought_past_month=row.get("bought_past_month"),
+                    image_urls=[row["image_url"]] if row.get("image_url") else [],
+                    is_sponsored=bool(row.get("is_sponsored")),
+                )
+            )
+        if not listings:
+            raise InsufficientDataError(
+                f"No priced listings could be parsed from Amazon India for '{keyword}'."
+            )
+        return listings
+
+    async def fetch_reviews(self, product_name: str, marketplace: str, max_reviews: int) -> list[ReviewRecord]:
+        """Reviews need an ASIN, so find the top listing first, then read its reviews."""
+        listings = await self.search_listings(product_name, marketplace, limit=5)
+        asin = next((item.asin for item in listings if item.asin), None)
+        if not asin:
+            raise InsufficientDataError(f"Could not resolve an ASIN for '{product_name}'.")
+
+        pages = max(1, min(10, (max_reviews + 9) // 10))
+        payload = await self.scraper.scrape_reviews(asin, pages=pages)
+        reviews = [
+            ReviewRecord(
+                rating=int(row.get("rating") or 3),
+                title=row.get("title") or "",
+                body=row.get("body") or "",
+                verified_purchase=bool(row.get("verified_purchase")),
+                helpful_votes=int(row.get("helpful_votes") or 0),
+            )
+            for row in payload["reviews"]
+        ][:max_reviews]
+        if not reviews:
+            raise InsufficientDataError(
+                f"Amazon returned no public reviews for ASIN {asin}. Review pages are often gated "
+                "behind a signed-in session; use a licensed data provider for review analysis."
+            )
+        return reviews
+
+
+def _brand_from_title(title: str) -> str:
+    """Amazon India titles lead with the brand, so the first token is a fair guess."""
+    first = (title or "").strip().split(" ")[0]
+    return first if first and first[0].isupper() else "Unknown"
+
+
 def build_provider(settings: Settings) -> ProductDataProvider:
     """Pick the provider implied by configuration (demo unless a real API is set)."""
+    # DEMO_MODE is an absolute kill switch: it must never fall through to a
+    # provider that touches the network, whatever else is configured.
+    if settings.demo_mode:
+        return DemoProductDataProvider()
+    if settings.product_data_provider in {"scraper", "amazon-scraper", "browser"}:
+        return ScraperProductDataProvider(settings)
     if settings.is_demo:
         return DemoProductDataProvider()
     if settings.product_data_provider in {"sp-api", "pa-api"}:
@@ -517,7 +623,12 @@ class AmazonService:
         median_reviews = reviews[len(reviews) // 2]
         brand_share = _brand_dominance(listings)
         price_spread = (max(prices) - min(prices)) / avg_price if avg_price else 0.0
-        avg_quality = sum(item.listing_quality_score for item in listings) / len(listings)
+
+        # Some sources (a scraped search page) cannot see images, bullets or A+
+        # content. Score quality only over listings where it is actually known.
+        rated = [item for item in listings if item.quality_known]
+        quality_known = bool(rated)
+        avg_quality = sum(item.listing_quality_score for item in rated) / len(rated) if rated else 50.0
 
         level, score = _competition_level(median_reviews, brand_share, avg_rating, avg_quality)
         weak = [
@@ -527,11 +638,11 @@ class AmazonService:
                 "price": item.price,
                 "rating": item.rating,
                 "review_count": item.review_count,
-                "listing_quality_score": round(item.listing_quality_score, 1),
+                "listing_quality_score": round(item.listing_quality_score, 1) if item.quality_known else None,
                 "weakness": _weakness_reason(item),
             }
             for item in listings
-            if item.listing_quality_score < 60 or item.rating < 3.9
+            if (item.quality_known and item.listing_quality_score < 60) or item.rating < 3.9
         ][:8]
 
         return {
@@ -557,14 +668,33 @@ class AmazonService:
                 "median_reviews_to_compete": int(median_reviews),
                 "level": "High" if median_reviews > 1500 else "Medium" if median_reviews > 400 else "Low",
             },
-            "listing_quality": {
-                "average_score": round(avg_quality, 1),
-                "level": "Strong" if avg_quality >= 75 else "Average" if avg_quality >= 55 else "Weak",
-            },
-            "image_quality": {
-                "average_images": round(sum(i.image_count for i in listings) / len(listings), 1),
-                "share_with_video": round(sum(1 for i in listings if i.has_video) / len(listings), 2),
-                "share_with_aplus": round(sum(1 for i in listings if i.has_aplus_content) / len(listings), 2),
+            "listing_quality": (
+                {
+                    "average_score": round(avg_quality, 1),
+                    "level": "Strong" if avg_quality >= 75 else "Average" if avg_quality >= 55 else "Weak",
+                    "listings_assessed": len(rated),
+                }
+                if quality_known
+                else {
+                    "average_score": None,
+                    "level": "Unknown",
+                    "note": "This data source cannot see images, bullets or A+ content. "
+                    "Run scrape_amazon_product on individual ASINs to assess listing quality.",
+                }
+            ),
+            "image_quality": (
+                {
+                    "average_images": round(sum(i.image_count for i in rated) / len(rated), 1),
+                    "share_with_video": round(sum(1 for i in rated if i.has_video) / len(rated), 2),
+                    "share_with_aplus": round(sum(1 for i in rated if i.has_aplus_content) / len(rated), 2),
+                }
+                if quality_known
+                else {"note": "Not visible from this data source."}
+            ),
+            "purchase_signals": {
+                "listings_with_bought_badge": sum(1 for i in listings if i.bought_past_month),
+                "total_bought_past_month": sum(i.bought_past_month or 0 for i in listings) or None,
+                "sponsored_share": round(sum(1 for i in listings if i.is_sponsored) / len(listings), 2),
             },
             "differentiation_opportunity": _differentiation_opportunity(avg_quality, brand_share, avg_rating),
             "weak_listings": weak,
@@ -765,7 +895,13 @@ def _demo_title(keyword: str, index: int, rng) -> str:
 
 
 def _listing_quality(listing: ProductListing) -> float:
-    """0-100 heuristic listing quality from images, bullets, title and content."""
+    """0-100 heuristic listing quality from images, bullets, title and content.
+
+    Returns 0.0 for sources that cannot see listing content; callers check
+    ``quality_known`` rather than treating that as a genuinely weak listing.
+    """
+    if not listing.quality_known:
+        return 0.0
     score = 0.0
     score += min(35.0, listing.image_count * 5.0)
     score += min(25.0, listing.bullet_count * 5.0)
@@ -807,6 +943,8 @@ def _competition_level(median_reviews: float, brand_share: float, avg_rating: fl
 
 def _weakness_reason(listing: ProductListing) -> str:
     reasons = []
+    if not listing.quality_known:
+        return f"weak rating {listing.rating}" if listing.rating < 3.9 else "listing content not visible from this source"
     if listing.image_count < 5:
         reasons.append(f"only {listing.image_count} images")
     if listing.bullet_count < 5:
@@ -854,8 +992,13 @@ def _competition_opportunities(
             "Add Hinglish and regional spellings in backend search terms.",
         ],
         "listing_gap_summary": (
-            f"{sum(1 for i in listings if i.image_count < 5)} of {len(listings)} listings have fewer than 5 images; "
-            f"{sum(1 for i in listings if not i.has_aplus_content)} have no A+ content."
+            (
+                f"{sum(1 for i in listings if i.quality_known and i.image_count < 5)} of "
+                f"{sum(1 for i in listings if i.quality_known)} assessable listings have fewer than 5 images; "
+                f"{sum(1 for i in listings if i.quality_known and not i.has_aplus_content)} have no A+ content."
+            )
+            if any(i.quality_known for i in listings)
+            else "Listing content is not visible from this data source."
         ),
         "brand_dominance_note": (
             "Branded sellers hold the majority of the first page." if brand_share > 0.6

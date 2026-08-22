@@ -1,0 +1,563 @@
+"""Amazon India page parsing: search results, product pages, reviews, bestsellers.
+
+Fetching (and every guardrail around it) lives in
+:mod:`services.browser_service`; this module only turns HTML into structured
+data.
+
+Selectors are configuration, not code. The bundled defaults reflect Amazon
+India's markup at the time of writing, and Amazon changes it without notice, so
+they can be replaced wholesale through ``BROWSER_SELECTORS_PATH`` without
+touching Python. When a selector stops matching, the field comes back ``None``
+rather than 0 or a guess - an unknown value is never dressed up as a measurement.
+
+Before enabling this: robots.txt on amazon.in currently permits ``/s``, ``/dp``,
+``/product-reviews`` and ``/gp/bestsellers``, but Amazon's Conditions of Use
+separately restrict automated data collection. Using a licensed data API
+(Rainforest, Keepa, SP-API) is the compliant route; see ``docs/SCRAPING.md``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any
+from urllib.parse import quote_plus, urljoin
+
+from pydantic import BaseModel, Field
+
+from config.settings import Settings, get_settings
+from services import (
+    Confidence,
+    DataEnvelope,
+    DataType,
+    InsufficientDataError,
+    InvalidInputError,
+    ServiceError,
+)
+from services.browser_service import BrowserService, FetchResult
+
+logger = logging.getLogger(__name__)
+
+AMAZON_IN = "https://www.amazon.in"
+ASIN_RE = re.compile(r"/(?:dp|gp/product)/([A-Z0-9]{10})")
+BOUGHT_RE = re.compile(r"([\d,.]+)\s*([KM]?)\+?\s*bought in past month", re.I)
+RATING_RE = re.compile(r"([\d.]+)\s*out of\s*5", re.I)
+COUNT_RE = re.compile(r"([\d,]+)")
+BSR_RE = re.compile(r"#([\d,]+)\s*in\s*([^(\n]+)", re.I)
+WEIGHT_RE = re.compile(r"([\d.]+)\s*(g|gram|grams|kg|kilograms?)\b", re.I)
+
+# Fallbacks used when the CSS selectors miss: Amazon frequently moves the rating
+# into a popover JSON blob and the review count into an aria-label.
+RATING_FALLBACK_RE = re.compile(r"([\d.]+)\s+out of 5 stars", re.I)
+REVIEWS_FALLBACK_RES = (
+    re.compile(r'aria-label="([\d,]+)\s+ratings?"', re.I),
+    re.compile(r'"totalReviewCount"\s*:\s*"?([\d,]+)', re.I),
+    re.compile(r">\s*\(?([\d,]{2,})\)?\s*<[^>]*>\s*(?:ratings?|reviews?)", re.I),
+)
+
+
+class ParserUnavailableError(ServiceError):
+    code = "html_parser_missing"
+    remediation = "Install the browser extra: `uv sync --extra browser`."
+
+
+# --------------------------------------------------------------------------- #
+# Default selectors (override via BROWSER_SELECTORS_PATH)
+# --------------------------------------------------------------------------- #
+DEFAULT_SELECTORS: dict[str, dict[str, str]] = {
+    "search": {
+        # Amazon rotates between layouts; the second selector catches the variant
+        # that omits data-component-type but still carries a real ASIN.
+        "result": 'div[data-component-type="s-search-result"], div.s-result-item[data-asin]',
+        "title": "h2 span",
+        "title_link": "h2 a",
+        "price": ".a-price .a-offscreen",
+        "rating": ".a-icon-star-small .a-icon-alt, .a-icon-star .a-icon-alt",
+        "review_count": "span.a-size-base.s-underline-text, span.a-size-base.puis-normal-weight-text",
+        "bought": "span.a-size-base.a-color-secondary",
+        "image": "img.s-image",
+        "sponsored": ".puis-sponsored-label-text, .s-sponsored-label-text",
+    },
+    "product": {
+        "title": "#productTitle",
+        "brand": "#bylineInfo",
+        "price": "#corePrice_feature_div .a-price .a-offscreen, .a-price .a-offscreen",
+        "rating": "#acrPopover .a-icon-alt, span[data-hook='rating-out-of-text']",
+        "review_count": "#acrCustomerReviewText",
+        "bought": "#socialProofingAsinFaceout_feature_div, #social-proofing-faceout-title-tk_bought, .social-proofing-faceout-title-text",
+        "details": "#detailBullets_feature_div, #productDetails_detailBullets_sections1, #prodDetails",
+        "bullets": "#feature-bullets li span",
+        "images": "#altImages img, #imgTagWrapperId img",
+        "seller": "#sellerProfileTriggerId, #merchant-info",
+        "availability": "#availability span",
+    },
+    "reviews": {
+        "review": "div[data-hook='review']",
+        "review_rating": "[data-hook='review-star-rating'] .a-icon-alt, [data-hook='cmps-review-star-rating'] .a-icon-alt",
+        "review_title": "[data-hook='review-title'] span:last-child, [data-hook='review-title']",
+        "review_body": "[data-hook='review-body'] span",
+        "review_date": "[data-hook='review-date']",
+        "verified": "[data-hook='avp-badge']",
+        "helpful": "[data-hook='helpful-vote-statement']",
+        "total_count": "[data-hook='total-review-count'], #acrCustomerReviewText",
+        "histogram_row": "#histogramTable tr, [data-hook='histogram-row']",
+    },
+    "bestsellers": {
+        "item": "#gridItemRoot, .zg-grid-general-faceout",
+        "title": "._cDEzb_p13n-sc-css-line-clamp-3_g3dy1, .p13n-sc-truncate",
+        "price": ".p13n-sc-price, .a-price .a-offscreen",
+        "rating": ".a-icon-alt",
+        "link": "a.a-link-normal",
+    },
+}
+
+
+# --------------------------------------------------------------------------- #
+# Models
+# --------------------------------------------------------------------------- #
+class ScrapedListing(BaseModel):
+    """One product as seen on a search results or bestseller page."""
+
+    asin: str | None = None
+    title: str | None = None
+    url: str | None = None
+    price: float | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    bought_past_month: int | None = None
+    image_url: str | None = None
+    is_sponsored: bool = False
+    position: int | None = None
+
+
+class ScrapedProduct(BaseModel):
+    """A full product detail page."""
+
+    asin: str | None = None
+    title: str | None = None
+    url: str | None = None
+    brand: str | None = None
+    price: float | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    bought_past_month: int | None = None
+    bsr: int | None = None
+    bsr_category: str | None = None
+    category_ranks: list[dict[str, Any]] = Field(default_factory=list)
+    weight_grams: float | None = None
+    seller: str | None = None
+    availability: str | None = None
+    bullet_points: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
+
+
+class ScrapedReview(BaseModel):
+    """One customer review from a review page."""
+
+    rating: int | None = None
+    title: str | None = None
+    body: str | None = None
+    review_date: str | None = None
+    verified_purchase: bool = False
+    helpful_votes: int = 0
+
+
+class AmazonScraperService:
+    """Fetch and parse public Amazon India pages."""
+
+    def __init__(self, settings: Settings | None = None, browser: BrowserService | None = None) -> None:
+        self.settings = settings or get_settings()
+        self.browser = browser or BrowserService(self.settings)
+
+    # -- selectors -------------------------------------------------------- #
+    @property
+    def selectors(self) -> dict[str, dict[str, str]]:
+        """Bundled defaults, overlaid with any operator-supplied selectors."""
+        merged = {section: dict(values) for section, values in DEFAULT_SELECTORS.items()}
+        for section, values in (self.settings.browser_selectors.get("amazon.in") or {}).items():
+            merged.setdefault(section, {}).update(values)
+        return merged
+
+    # -- urls ------------------------------------------------------------- #
+    @staticmethod
+    def search_url(keyword: str, page: int = 1) -> str:
+        keyword = (keyword or "").strip()
+        if len(keyword) < 2:
+            raise InvalidInputError("Invalid keyword: provide at least 2 characters.")
+        suffix = f"&page={page}" if page > 1 else ""
+        return f"{AMAZON_IN}/s?k={quote_plus(keyword)}{suffix}"
+
+    @staticmethod
+    def product_url(asin: str) -> str:
+        asin = (asin or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{10}", asin):
+            raise InvalidInputError(f"Invalid ASIN '{asin}': expected 10 alphanumeric characters.")
+        return f"{AMAZON_IN}/dp/{asin}"
+
+    @staticmethod
+    def reviews_url(asin: str, page: int = 1, sort: str = "recent") -> str:
+        asin = (asin or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{10}", asin):
+            raise InvalidInputError(f"Invalid ASIN '{asin}': expected 10 alphanumeric characters.")
+        sort_by = "recent" if sort == "recent" else "helpful"
+        return f"{AMAZON_IN}/product-reviews/{asin}?sortBy={sort_by}&pageNumber={page}"
+
+    @staticmethod
+    def bestsellers_url(category_path: str = "") -> str:
+        return f"{AMAZON_IN}/gp/bestsellers/{category_path.strip('/')}" if category_path else f"{AMAZON_IN}/gp/bestsellers"
+
+    # -- scraping --------------------------------------------------------- #
+    async def scrape_search(self, keyword: str, pages: int = 1, render: bool = False) -> dict[str, Any]:
+        """Scrape Amazon India search results for a keyword."""
+        if not 1 <= pages <= 5:
+            raise InvalidInputError("pages must be between 1 and 5.", remediation="Try pages=1.")
+
+        listings: list[ScrapedListing] = []
+        fetched: list[FetchResult] = []
+        for page in range(1, pages + 1):
+            result = await self.browser.fetch(self.search_url(keyword, page), render=render)
+            fetched.append(result)
+            listings.extend(self._parse_search(result.html, offset=len(listings)))
+
+        if not listings:
+            raise InsufficientDataError(
+                f"No listings could be parsed for '{keyword}'. Amazon's markup may have changed, "
+                "or the page was served without results."
+            )
+        return {
+            "keyword": keyword,
+            "pages_fetched": len(fetched),
+            "listings_found": len(listings),
+            "organic_listings": sum(1 for item in listings if not item.is_sponsored),
+            "sponsored_listings": sum(1 for item in listings if item.is_sponsored),
+            "listings": [item.model_dump() for item in listings],
+            "field_coverage": _coverage([item.model_dump() for item in listings]),
+            **fetched[0].envelope.as_dict(),
+        }
+
+    async def scrape_product(self, asin: str, render: bool = False) -> dict[str, Any]:
+        """Scrape a single Amazon India product detail page."""
+        url = self.product_url(asin)
+        result = await self.browser.fetch(url, render=render)
+        product = self._parse_product(result.html, url)
+        product.asin = product.asin or asin.upper()
+        if not product.title:
+            raise InsufficientDataError(
+                f"Could not parse the product page for {asin}. The markup may have changed."
+            )
+        return {"product": product.model_dump(), **result.envelope.as_dict()}
+
+    async def scrape_reviews(self, asin: str, pages: int = 1, render: bool = False) -> dict[str, Any]:
+        """Scrape customer reviews for an ASIN.
+
+        Amazon often requires a signed-in session for ``/product-reviews`` pages;
+        when it does, this returns an empty review list rather than pretending.
+        """
+        if not 1 <= pages <= 10:
+            raise InvalidInputError("pages must be between 1 and 10.")
+
+        reviews: list[ScrapedReview] = []
+        first: FetchResult | None = None
+        for page in range(1, pages + 1):
+            result = await self.browser.fetch(self.reviews_url(asin, page), render=render)
+            first = first or result
+            page_reviews = self._parse_reviews(result.html)
+            reviews.extend(page_reviews)
+            if not page_reviews:
+                break
+
+        assert first is not None
+        total = _first_int(_text_of(self._select_one(first.html, self.selectors["reviews"]["total_count"])))
+        return {
+            "asin": asin.upper(),
+            "pages_fetched": pages,
+            "reviews_scraped": len(reviews),
+            "total_review_count_on_page": total,
+            "reviews": [review.model_dump() for review in reviews],
+            "rating_distribution": _distribution(reviews),
+            "login_required": len(reviews) == 0,
+            "note": (
+                "No reviews parsed - Amazon commonly gates review pages behind a signed-in session. "
+                "Use analyze_reviews with a data provider for review analysis."
+                if not reviews
+                else "Scraped from the public review pages."
+            ),
+            **first.envelope.as_dict(),
+        }
+
+    async def scrape_bestsellers(self, category_path: str = "", render: bool = False) -> dict[str, Any]:
+        """Scrape an Amazon India bestsellers page - useful for finding proven demand."""
+        url = self.bestsellers_url(category_path)
+        result = await self.browser.fetch(url, render=render)
+        items = self._parse_bestsellers(result.html)
+        if not items:
+            raise InsufficientDataError("No bestseller entries could be parsed; the markup may have changed.")
+        return {
+            "category_path": category_path or "(all categories)",
+            "url": url,
+            "items_found": len(items),
+            "items": [item.model_dump() for item in items],
+            **result.envelope.as_dict(),
+        }
+
+    # -- parsing ---------------------------------------------------------- #
+    def _parse_search(self, html: str, offset: int = 0) -> list[ScrapedListing]:
+        tree = _parse(html)
+        selectors = self.selectors["search"]
+        listings: list[ScrapedListing] = []
+        for index, node in enumerate(tree.css(selectors["result"])):
+            asin = node.attributes.get("data-asin") or None
+            link = node.css_first(selectors["title_link"])
+            href = link.attributes.get("href") if link else None
+            image = node.css_first(selectors["image"])
+            card_html = node.html or ""
+            listings.append(
+                ScrapedListing(
+                    asin=asin or None,
+                    title=_text_of(node.css_first(selectors["title"])),
+                    url=urljoin(AMAZON_IN, href) if href else (f"{AMAZON_IN}/dp/{asin}" if asin else None),
+                    price=_price(_text_of(node.css_first(selectors["price"]))),
+                    rating=(
+                        _rating(_text_of(node.css_first(selectors["rating"])))
+                        or _rating_fallback(card_html)
+                    ),
+                    review_count=(
+                        _first_int(_text_of(node.css_first(selectors["review_count"])))
+                        or _reviews_fallback(card_html)
+                    ),
+                    bought_past_month=_bought(node.text()) or _bought(card_html),
+                    image_url=image.attributes.get("src") if image else None,
+                    is_sponsored=bool(node.css_first(selectors["sponsored"])),
+                    position=offset + index + 1,
+                )
+            )
+        return listings
+
+    def _parse_product(self, html: str, url: str) -> ScrapedProduct:
+        tree = _parse(html)
+        selectors = self.selectors["product"]
+        details_text = " ".join(_text_of(node) or "" for node in tree.css(selectors["details"]))
+        ranks = _category_ranks(details_text)
+        asin_match = ASIN_RE.search(url)
+
+        return ScrapedProduct(
+            asin=asin_match.group(1) if asin_match else None,
+            title=_text_of(tree.css_first(selectors["title"])),
+            url=url,
+            brand=_brand(_text_of(tree.css_first(selectors["brand"]))),
+            price=_price(_text_of(tree.css_first(selectors["price"]))),
+            rating=_rating(_text_of(tree.css_first(selectors["rating"]))) or _rating_fallback(html),
+            review_count=(
+                _first_int(_text_of(tree.css_first(selectors["review_count"]))) or _reviews_fallback(html)
+            ),
+            bought_past_month=_bought(tree.body.text() if tree.body else html),
+            bsr=ranks[0]["rank"] if ranks else None,
+            bsr_category=ranks[0]["category"] if ranks else None,
+            category_ranks=ranks,
+            weight_grams=_weight_grams(details_text),
+            seller=_text_of(tree.css_first(selectors["seller"])),
+            availability=_text_of(tree.css_first(selectors["availability"])),
+            bullet_points=[
+                text for node in tree.css(selectors["bullets"]) if (text := _text_of(node)) and len(text) > 3
+            ][:10],
+            image_urls=_image_urls(html, tree, selectors["images"]),
+        )
+
+    def _parse_reviews(self, html: str) -> list[ScrapedReview]:
+        tree = _parse(html)
+        selectors = self.selectors["reviews"]
+        reviews: list[ScrapedReview] = []
+        for node in tree.css(selectors["review"]):
+            rating = _rating(_text_of(node.css_first(selectors["review_rating"])))
+            reviews.append(
+                ScrapedReview(
+                    rating=int(rating) if rating else None,
+                    title=_text_of(node.css_first(selectors["review_title"])),
+                    body=_text_of(node.css_first(selectors["review_body"])),
+                    review_date=_text_of(node.css_first(selectors["review_date"])),
+                    verified_purchase=bool(node.css_first(selectors["verified"])),
+                    helpful_votes=_first_int(_text_of(node.css_first(selectors["helpful"]))) or 0,
+                )
+            )
+        return reviews
+
+    def _parse_bestsellers(self, html: str) -> list[ScrapedListing]:
+        tree = _parse(html)
+        selectors = self.selectors["bestsellers"]
+        items: list[ScrapedListing] = []
+        for index, node in enumerate(tree.css(selectors["item"])):
+            link = node.css_first(selectors["link"])
+            href = link.attributes.get("href") if link else None
+            asin_match = ASIN_RE.search(href or "")
+            items.append(
+                ScrapedListing(
+                    asin=asin_match.group(1) if asin_match else None,
+                    title=_text_of(node.css_first(selectors["title"])),
+                    url=urljoin(AMAZON_IN, href) if href else None,
+                    price=_price(_text_of(node.css_first(selectors["price"]))),
+                    rating=_rating(_text_of(node.css_first(selectors["rating"]))),
+                    position=index + 1,
+                )
+            )
+        return items
+
+    def _select_one(self, html: str, selector: str) -> Any:
+        return _parse(html).css_first(selector)
+
+    def envelope(self) -> DataEnvelope:
+        return DataEnvelope(
+            source="amazon.in public pages (scraped)",
+            data_type=DataType.LIVE,
+            confidence=Confidence.MEDIUM,
+            notes="Parsed from live HTML; unparsed fields are returned as null rather than guessed.",
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Parsing helpers
+# --------------------------------------------------------------------------- #
+def _parse(html: str) -> Any:
+    """Parse HTML with selectolax, which ships in the browser extra."""
+    try:
+        from selectolax.parser import HTMLParser  # noqa: PLC0415
+    except ImportError as exc:
+        raise ParserUnavailableError("selectolax is not installed.") from exc
+    return HTMLParser(html)
+
+
+def _text_of(node: Any) -> str | None:
+    if node is None:
+        return None
+    text = node.text(strip=True) if hasattr(node, "text") else str(node)
+    return " ".join(text.split()) or None
+
+
+def _price(text: str | None) -> float | None:
+    if not text:
+        return None
+    cleaned = text.replace(",", "").replace("₹", "").replace("Rs.", "").strip()
+    match = re.search(r"\d+(?:\.\d+)?", cleaned)
+    return float(match.group()) if match else None
+
+
+def _rating(text: str | None) -> float | None:
+    if not text:
+        return None
+    match = RATING_RE.search(text)
+    if match:
+        return float(match.group(1))
+    match = re.fullmatch(r"\s*([\d.]+)\s*", text)
+    return float(match.group(1)) if match else None
+
+
+def _first_int(text: str | None) -> int | None:
+    if not text:
+        return None
+    match = COUNT_RE.search(text.replace(",", ""))
+    return int(match.group(1)) if match else None
+
+
+def _bought(text: str | None) -> int | None:
+    """Parse Amazon's '500+ bought in past month' social-proof badge."""
+    if not text:
+        return None
+    match = BOUGHT_RE.search(text)
+    if not match:
+        return None
+    value = float(match.group(1).replace(",", ""))
+    multiplier = {"K": 1_000, "M": 1_000_000}.get(match.group(2).upper(), 1)
+    return int(value * multiplier)
+
+
+def _rating_fallback(html: str) -> float | None:
+    """Find a star rating anywhere in the markup, including popover JSON blobs."""
+    match = RATING_FALLBACK_RE.search(html or "")
+    if not match:
+        return None
+    value = float(match.group(1))
+    return value if 0 < value <= 5 else None
+
+
+def _reviews_fallback(html: str) -> int | None:
+    """Find a review or rating count through the patterns Amazon rotates between."""
+    for pattern in REVIEWS_FALLBACK_RES:
+        match = pattern.search(html or "")
+        if match:
+            try:
+                count = int(match.group(1).replace(",", ""))
+            except ValueError:
+                continue
+            if count > 0:
+                return count
+    return None
+
+
+def _brand(text: str | None) -> str | None:
+    if not text:
+        return None
+    return re.sub(r"^(visit the|brand:)\s*", "", text, flags=re.I).replace(" Store", "").strip() or None
+
+
+def _category_ranks(details_text: str) -> list[dict[str, Any]]:
+    """Extract every '#1,234 in Category' best-seller rank from the details block."""
+    ranks: list[dict[str, Any]] = []
+    for match in BSR_RE.finditer(details_text or ""):
+        category = match.group(2).strip(" .,;")
+        if not category or len(category) > 80:
+            continue
+        ranks.append({"rank": int(match.group(1).replace(",", "")), "category": category})
+    return ranks[:5]
+
+
+def _weight_grams(details_text: str) -> float | None:
+    if not details_text:
+        return None
+    match = re.search(r"(?:item weight|weight)\D{0,20}" + WEIGHT_RE.pattern, details_text, re.I)
+    if not match:
+        return None
+    value, unit = float(match.group(1)), match.group(2).lower()
+    return value * 1000 if unit.startswith("k") else value
+
+
+def _image_urls(html: str, tree: Any, selector: str) -> list[str]:
+    """Collect product images from the gallery and the embedded image JSON."""
+    urls: list[str] = []
+    for node in tree.css(selector):
+        src = node.attributes.get("src") or node.attributes.get("data-old-hires")
+        if src and src.startswith("http"):
+            urls.append(re.sub(r"\._[A-Z0-9_,]+_\.", ".", src))
+
+    # Amazon embeds the full-resolution gallery in a colorImages script block.
+    match = re.search(r"'colorImages':\s*\{\s*'initial':\s*(\[.*?\])\s*\}", html, re.S)
+    if match:
+        try:
+            for entry in json.loads(match.group(1).replace("'", '"')):
+                for key in ("hiRes", "large", "thumb"):
+                    if entry.get(key):
+                        urls.append(entry[key])
+                        break
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            logger.debug("Could not parse the colorImages block")
+
+    seen: set[str] = set()
+    return [url for url in urls if not (url in seen or seen.add(url))][:12]
+
+
+def _distribution(reviews: list[ScrapedReview]) -> dict[str, int]:
+    distribution = {f"{star}_star": 0 for star in range(1, 6)}
+    for review in reviews:
+        if review.rating and 1 <= review.rating <= 5:
+            distribution[f"{review.rating}_star"] += 1
+    return distribution
+
+
+def _coverage(rows: list[dict[str, Any]]) -> dict[str, str]:
+    """How often each field actually parsed - the honest health check on selectors."""
+    if not rows:
+        return {}
+    coverage: dict[str, str] = {}
+    for field_name in rows[0]:
+        filled = sum(1 for row in rows if row.get(field_name) not in (None, "", []))
+        coverage[field_name] = f"{filled}/{len(rows)}"
+    return coverage
