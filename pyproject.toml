@@ -4,6 +4,30 @@ version = "0.1.0"
 description = "Amazon India product research MCP server for beginner sellers (stdio transport, Claude Desktop ready)"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Suriya Ravichandran" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "amazon",
+    "amazon-india",
+    "product-research",
+    "ecommerce",
+    "claude",
+    "seller-tools",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+
 dependencies = [
     "mcp>=1.2.0",
     "pydantic>=2.6",
@@ -14,14 +38,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Free live data sources, no API keys required.
 realtime = [
     "ddgs>=9.15.0",
     "pytrends>=4.9",
 ]
+# Page fetching and HTML parsing for the Amazon India scraping tools.
 browser = [
     "playwright>=1.40",
     "selectolax>=0.3.21",
 ]
+
+# NOTE: table headers must come after every bare key in [project], or the keys
+# below them are parsed as part of that table instead.
+[project.urls]
+Homepage = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP"
+Repository = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP"
+Issues = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/issues"
+Documentation = "https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/tree/main/docs"
 
 [dependency-groups]
 dev = [

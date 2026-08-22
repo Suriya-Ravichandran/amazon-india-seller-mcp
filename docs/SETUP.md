@@ -358,7 +358,7 @@ margin. You are done.
 
 ## 7. Use it
 
-Prompts that map cleanly onto the eight tools:
+Prompts that map cleanly onto the tools ([PROMPTS.md](PROMPTS.md) has 56 more, grouped by task):
 
 ```text
 Screen these ideas and rank them: sink strainer, cable organizer, spice rack.
@@ -779,6 +779,7 @@ uv sync
 - [`../mcp.json.example`](../mcp.json.example) — Claude Desktop config variants
 - [`check_connection.py`](check_connection.py) — the connection self-test used in section 5.3
 - [`SCRAPING.md`](SCRAPING.md) — live data sources, scraping guardrails and compliance
+- [`PROMPTS.md`](PROMPTS.md) — copy-paste prompt library and chained workflows
 
 **A reminder before you spend money:** demand, sales and profitability figures are estimates
 based on your inputs and the configured fee schedule, not guarantees. Verify fees in Seller

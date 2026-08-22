@@ -35,7 +35,10 @@ from tools import (  # noqa: E402
     keyword_research,
     launch_planner,
     listing_generator,
+    listing_scraper,
     opportunity_finder,
+    ppc_bidding,
+    ppc_keywords,
     product_images,
     product_research,
     profit_calculator,
@@ -70,9 +73,13 @@ TOOL_MODULES = (
     # Discovery and planning
     opportunity_finder,
     launch_planner,
+    # Amazon Ads
+    ppc_keywords,
+    ppc_bidding,
     # Live data
     web_search,
     amazon_scraper,
+    listing_scraper,
 )
 
 SERVER_INSTRUCTIONS = """
@@ -85,7 +92,9 @@ Tools, grouped by job:
 - Demand: analyze_product_demand, analyze_evergreen, analyze_purchase_signals
 - Competition: analyze_competition, analyze_competitors, analyze_review_metrics
 - Money: calculate_profitability, calculate_revenue, plan_product_launch
-- Listing: research_keywords, generate_listing, analyze_product_images, analyze_reviews
+- Listing: research_keywords, generate_listing, analyze_product_images, analyze_reviews,
+  scrape_listing_details
+- Advertising: suggest_ppc_keywords, calculate_ppc_bids, plan_ppc_campaign
 - Sourcing: search_suppliers
 - Live data: search_web, scrape_amazon_search, scrape_amazon_product, scraper_status
 
@@ -104,6 +113,9 @@ Data integrity rules when presenting results to the user:
 - Scraping tools honour robots.txt, an allowlist, a crawl delay and a page
   budget, and stop when a site blocks them. They never bypass bot protection.
   If a scrape is blocked, tell the user to slow down or use a licensed API.
+- Advertising output uses category benchmark conversion rates and CPC bands,
+  not the user's campaign data. Always state that, and never present a bid as
+  a guaranteed cost per click.
 """.strip()
 
 

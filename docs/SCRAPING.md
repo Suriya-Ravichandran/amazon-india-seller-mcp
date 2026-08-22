@@ -225,4 +225,5 @@ is what makes its seasonality judgement meaningful rather than guessed.
 
 - [`SETUP.md`](SETUP.md) — installation and Claude Desktop configuration
 - [`../README.md`](../README.md) — features and the full tool reference
+- [`PROMPTS.md`](PROMPTS.md) — prompt library, including the live-data prompts
 - [`../.env.example`](../.env.example) — every setting, with a production profile

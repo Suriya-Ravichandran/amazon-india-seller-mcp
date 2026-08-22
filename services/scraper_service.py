@@ -91,6 +91,16 @@ DEFAULT_SELECTORS: dict[str, dict[str, str]] = {
         "images": "#altImages img, #imgTagWrapperId img",
         "seller": "#sellerProfileTriggerId, #merchant-info",
         "availability": "#availability span",
+        "description": "#productDescription, #productDescription p",
+        "aplus": "#aplus, #aplus_feature_div, #aplusBrandStory_feature_div",
+        "specs": "#productDetails_techSpec_section_1 tr, #technicalSpecifications_section_1 tr, #detailBullets_feature_div li",
+        "breadcrumb": "#wayfinding-breadcrumbs_feature_div a, #nav-subnav a.nav-a",
+        "variations": "#variation_color_name li, #variation_size_name li, #twister li",
+        "badges": "#acBadge_feature_div, #zeitgeistBadge_feature_div, .badge-wrapper, #bestSellerBadge",
+        "coupon": "#promoPriceBlockMessage, .couponBadge, #vpcButton",
+        "video": "#altImages .videoThumbnail, .video-thumbnail, #main-video-container",
+        "answered_questions": "#askATFLink, a#askATFLink span",
+        "delivery": "#mir-layout-DELIVERY_BLOCK, #deliveryBlockMessage",
     },
     "reviews": {
         "review": "div[data-hook='review']",
@@ -150,6 +160,43 @@ class ScrapedProduct(BaseModel):
     availability: str | None = None
     bullet_points: list[str] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
+
+
+class ListingDetails(BaseModel):
+    """Everything visible on a product detail page, for a competitive teardown."""
+
+    asin: str | None = None
+    url: str | None = None
+    title: str | None = None
+    title_length: int = 0
+    brand: str | None = None
+    price: float | None = None
+    list_price: float | None = None
+    discount_percent: float | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    answered_questions: int | None = None
+    bought_past_month: int | None = None
+    bsr: int | None = None
+    bsr_category: str | None = None
+    category_ranks: list[dict[str, Any]] = Field(default_factory=list)
+    category_path: list[str] = Field(default_factory=list)
+    bullet_points: list[str] = Field(default_factory=list)
+    bullet_count: int = 0
+    description: str | None = None
+    description_length: int = 0
+    image_urls: list[str] = Field(default_factory=list)
+    image_count: int = 0
+    has_video: bool = False
+    has_aplus_content: bool = False
+    specifications: dict[str, str] = Field(default_factory=dict)
+    weight_grams: float | None = None
+    variation_count: int = 0
+    badges: list[str] = Field(default_factory=list)
+    has_coupon: bool = False
+    seller: str | None = None
+    availability: str | None = None
+    delivery: str | None = None
 
 
 class ScrapedReview(BaseModel):
@@ -247,6 +294,78 @@ class AmazonScraperService:
                 f"Could not parse the product page for {asin}. The markup may have changed."
             )
         return {"product": product.model_dump(), **result.envelope.as_dict()}
+
+    async def scrape_listing_details(self, asin: str, render: bool = False) -> dict[str, Any]:
+        """Scrape a full listing teardown: title, images, bullets, A+, specs and more."""
+        url = self.product_url(asin)
+        result = await self.browser.fetch(url, render=render)
+        details = self._parse_listing_details(result.html, url)
+        details.asin = details.asin or asin.upper()
+        if not details.title:
+            raise InsufficientDataError(
+                f"Could not parse the listing for {asin}. Amazon may have changed its markup, "
+                "or the page needed JavaScript - retry with render=true."
+            )
+        payload = details.model_dump()
+        return {
+            "listing": payload,
+            "missing_fields": [key for key, value in payload.items() if value in (None, [], {}, 0, "")],
+            **result.envelope.as_dict(),
+        }
+
+    def _parse_listing_details(self, html: str, url: str) -> ListingDetails:
+        """Parse every listing element a competitor teardown needs."""
+        tree = _parse(html)
+        selectors = self.selectors["product"]
+        base = self._parse_product(html, url)
+
+        bullets = base.bullet_points
+        images = base.image_urls
+        description = _text_of(tree.css_first(selectors["description"]))
+        prices = [_price(_text_of(node)) for node in tree.css(".a-price .a-offscreen, .a-text-price .a-offscreen")]
+        prices = [value for value in prices if value]
+        list_price = max(prices) if len(prices) > 1 and max(prices) > (base.price or 0) else None
+
+        return ListingDetails(
+            asin=base.asin,
+            url=url,
+            title=base.title,
+            title_length=len(base.title or ""),
+            brand=base.brand,
+            price=base.price,
+            list_price=list_price,
+            discount_percent=(
+                round((list_price - base.price) / list_price * 100, 1)
+                if list_price and base.price and list_price > base.price
+                else None
+            ),
+            rating=base.rating,
+            review_count=base.review_count,
+            answered_questions=_first_int(_text_of(tree.css_first(selectors["answered_questions"]))),
+            bought_past_month=base.bought_past_month,
+            bsr=base.bsr,
+            bsr_category=base.bsr_category,
+            category_ranks=base.category_ranks,
+            category_path=[
+                text for node in tree.css(selectors["breadcrumb"]) if (text := _text_of(node)) and len(text) < 60
+            ][:6],
+            bullet_points=bullets,
+            bullet_count=len(bullets),
+            description=description,
+            description_length=len(description or ""),
+            image_urls=images,
+            image_count=len(images),
+            has_video=bool(tree.css_first(selectors["video"])) or "videoCount" in html,
+            has_aplus_content=bool(tree.css_first(selectors["aplus"])),
+            specifications=_specifications(tree, selectors["specs"]),
+            weight_grams=base.weight_grams,
+            variation_count=len(tree.css(selectors["variations"])),
+            badges=[text for node in tree.css(selectors["badges"]) if (text := _badge_text(node))][:5],
+            has_coupon=bool(tree.css_first(selectors["coupon"])),
+            seller=base.seller,
+            availability=base.availability,
+            delivery=_text_of(tree.css_first(selectors["delivery"])),
+        )
 
     async def scrape_reviews(self, asin: str, pages: int = 1, render: bool = False) -> dict[str, Any]:
         """Scrape customer reviews for an ASIN.
@@ -542,6 +661,46 @@ def _image_urls(html: str, tree: Any, selector: str) -> list[str]:
 
     seen: set[str] = set()
     return [url for url in urls if not (url in seen or seen.add(url))][:12]
+
+
+def _badge_text(node: Any) -> str | None:
+    """Return a badge label, ignoring the JSON config blobs Amazon puts in the same nodes."""
+    text = _text_of(node)
+    if not text or len(text) > 80:
+        return None
+    if text.startswith(("{", "[")) or '":' in text:
+        return None
+    return text
+
+
+def _specifications(tree: Any, selector: str) -> dict[str, str]:
+    """Read the specification table into a plain dict.
+
+    Amazon uses two shapes: a real ``th``/``td`` table, and detail bullets where
+    the key and value are sibling spans wrapped in a container span. The
+    container repeats both, so it has to be discarded or every row parses wrong.
+    """
+    specs: dict[str, str] = {}
+    for row in tree.css(selector):
+        cells = [text for cell in row.css("th, td") if (text := _text_of(cell))]
+        if len(cells) < 2:
+            spans = [text for span in row.css("span") if (text := _text_of(span))]
+            # Drop any span that merely wraps the others.
+            cells = [
+                text for index, text in enumerate(spans)
+                if not any(other != text and other in text for other in spans[index + 1:])
+            ]
+        if len(cells) >= 2:
+            key = _clean_spec(cells[0]).rstrip(":").strip()
+            value = _clean_spec(cells[1])
+            if key and value and 1 < len(key) < 60 and key.lower() not in {k.lower() for k in specs}:
+                specs[key] = value[:200]
+    return dict(list(specs.items())[:25])
+
+
+def _clean_spec(text: str) -> str:
+    """Strip the bidirectional marks Amazon pads specification cells with."""
+    return text.replace("\u200e", "").replace("\u200f", "").replace("\u200b", "").strip(" :\t")
 
 
 def _distribution(reviews: list[ScrapedReview]) -> dict[str, int]:

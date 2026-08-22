@@ -46,10 +46,15 @@ EXPECTED_TOOLS = {
     # Discovery and planning
     "find_product_opportunities",
     "plan_product_launch",
+    # Amazon Ads
+    "suggest_ppc_keywords",
+    "calculate_ppc_bids",
+    "plan_ppc_campaign",
     # Live data
     "search_web",
     "scrape_amazon_search",
     "scrape_amazon_product",
+    "scrape_listing_details",
     "scraper_status",
 }
 
