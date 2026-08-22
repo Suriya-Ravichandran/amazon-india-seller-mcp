@@ -3,13 +3,13 @@
 
   "mcpServers": {
     "amazon-product-research": {
-      "command": "D:\project\Amazon-India-Product-Research-MCP\.venv\Scripts\python.exe",
+      "command": "D:\project\amazon-india-seller-mcp\.venv\Scripts\python.exe",
       "args": [
-        "D:\project\Amazon-India-Product-Research-MCP\server.py"
+        "D:\project\amazon-india-seller-mcp\server.py"
       ],
       "env": {
         "DEMO_MODE": "true",
-        "DATABASE_URL": "sqlite:///D:/project/Amazon-India-Product-Research-MCP/amazon_product_mcp.db",
+        "DATABASE_URL": "sqlite:///D:/project/amazon-india-seller-mcp/amazon_product_mcp.db",
         "LOG_LEVEL": "INFO"
       }
     }
@@ -18,9 +18,9 @@
   "_macos_or_linux_example": {
     "mcpServers": {
       "amazon-product-research": {
-        "command": "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/.venv/bin/python",
+        "command": "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/.venv/bin/python",
         "args": [
-          "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/server.py"
+          "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/server.py"
         ],
         "env": {
           "DEMO_MODE": "true"
@@ -35,7 +35,7 @@
         "command": "uv",
         "args": [
           "--directory",
-          "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP",
+          "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp",
           "run",
           "server.py"
         ],

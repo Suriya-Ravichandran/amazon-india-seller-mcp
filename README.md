@@ -1,10 +1,11 @@
 # Amazon India Product Research MCP
 
-[![CI](https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Suriya-Ravichandran/Amazon-India-Product-Research-MCP/actions/workflows/ci.yml)
+[![CI](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Suriya-Ravichandran/amazon-india-seller-mcp/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-purple.svg)](https://modelcontextprotocol.io)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Security policy](https://img.shields.io/badge/security-policy-red.svg)](SECURITY.md)
 
 An MCP (Model Context Protocol) server that turns Claude Desktop into a product research
 assistant for **beginner Amazon India sellers**. It scores product opportunities, estimates
@@ -88,7 +89,7 @@ This project refuses to make up marketplace facts. Every meaningful output carri
 ## Architecture
 
 ```text
-Amazon-India-Product-Research-MCP/
+amazon-india-seller-mcp/
 │
 ├── server.py                     # MCP entry point (stdio transport) - wiring only
 │
@@ -126,7 +127,8 @@ Amazon-India-Product-Research-MCP/
 │   ├── search_service.py         # Web search (DuckDuckGo free, Brave/Serper/Tavily/Google CSE)
 │   ├── browser_service.py        # Guardrailed fetching: allowlist, robots.txt, delay, budget, block detection
 │   ├── scraper_service.py        # Amazon India page parsing (search, product, listing detail, reviews, bestsellers)
-│   └── ads_service.py            # Sponsored Products bid maths, keyword match types, campaign structure
+│   ├── ads_service.py            # Sponsored Products bid maths, keyword match types, campaign structure
+│   └── security.py               # SSRF guards, log redaction, prompt-injection scanning, size caps
 │
 ├── database/                     # Research history
 │   ├── __init__.py
@@ -154,7 +156,7 @@ Amazon-India-Product-Research-MCP/
 ├── LICENSE                       # MIT
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
-├── SECURITY.md
+├── SECURITY.md                   # threat model and controls
 ├── .github/workflows/ci.yml      # tests on Python 3.11-3.13
 ├── pyproject.toml                # Dependencies, managed by uv
 └── uv.lock
@@ -173,7 +175,7 @@ Quick version below; the [Setup & Run Guide](docs/SETUP.md) covers every step in
 
 ```bash
 git clone <your-repo-url>
-cd Amazon-India-Product-Research-MCP
+cd amazon-india-seller-mcp
 uv sync
 ```
 
@@ -292,8 +294,8 @@ traffic. Stop it with `Ctrl+C`.
 {
   "mcpServers": {
     "amazon-product-research": {
-      "command": "/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/.venv/bin/python",
-      "args": ["/ABSOLUTE/PATH/TO/Amazon-India-Product-Research-MCP/server.py"],
+      "command": "/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/.venv/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/amazon-india-seller-mcp/server.py"],
       "env": { "DEMO_MODE": "true" }
     }
   }
@@ -516,7 +518,7 @@ is not implemented here.
 ## Testing
 
 ```bash
-uv run pytest                      # whole suite (144 tests)
+uv run pytest                      # whole suite (193 tests)
 uv run pytest -v                   # verbose
 uv run pytest tests/test_profit_calculator.py
 uv run docs/check_connection.py    # end-to-end MCP connection self-test
@@ -552,6 +554,32 @@ touches your research database.
 
 Logs go to stderr. Set `DEBUG=true` or `LOG_LEVEL=DEBUG` for detail; in Claude Desktop, use
 the MCP log files (`%APPDATA%\Claude\logs` on Windows, `~/Library/Logs/Claude` on macOS).
+
+---
+
+## Security
+
+Three risks come with what this server does, and each has an explicit control. Full
+detail in [SECURITY.md](SECURITY.md); the controls are tested in
+[`tests/test_security.py`](tests/test_security.py).
+
+**SSRF.** Scheme, port and resolved IP are checked before any request, and every
+redirect hop is revalidated — so an allowlisted host cannot redirect the fetch onto
+loopback, a private range or the cloud metadata endpoint. Playwright requests go
+through the same gate.
+
+**Credentials.** A redacting log filter scrubs API keys, bearer tokens and
+secret-bearing query parameters from every log record, including library logging such
+as httpx's request URLs. No tool output ever contains a key.
+
+**Prompt injection.** Scraped listings, reviews and search results are third-party text
+landing in an LLM's context. Every field is sanitised (control, zero-width and
+bidirectional characters stripped), scanned for instruction-shaped content, and
+returned with a `content_safety` block. The server's MCP instructions tell the model
+to treat it as data, never instructions.
+
+Also enforced: an 8 MB response cap, 5-hop redirect limit, validated config file paths,
+parameterised SQL, and no stack traces reaching the MCP client.
 
 ---
 

@@ -292,28 +292,28 @@ class Settings(BaseSettings):
         """
         if not self.browser_selectors_path:
             return {}
-        path = Path(self.browser_selectors_path)
-        if not path.is_file():
-            logger.warning("BROWSER_SELECTORS_PATH %s not found; no selectors loaded", path)
-            return {}
         try:
+            from services.security import validate_config_path  # noqa: PLC0415
+
+            path = validate_config_path(self.browser_selectors_path)
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001 - bad config must not crash startup
-            logger.exception("Invalid selector config at %s", path)
+            logger.exception("Could not load BROWSER_SELECTORS_PATH; no selector overrides applied")
             return {}
 
     @property
     def fee_schedule(self) -> FeeSchedule:
         """Load the fee schedule, preferring an operator supplied JSON file."""
         if self.amazon_fee_config_path:
-            path = Path(self.amazon_fee_config_path)
-            if path.is_file():
-                try:
-                    return FeeSchedule(**json.loads(path.read_text(encoding="utf-8")))
-                except Exception:  # noqa: BLE001 - configuration must never crash startup
-                    logger.exception("Invalid fee config at %s; using bundled defaults", path)
-            else:
-                logger.warning("AMAZON_FEE_CONFIG_PATH %s not found; using defaults", path)
+            try:
+                from services.security import validate_config_path  # noqa: PLC0415
+
+                path = validate_config_path(self.amazon_fee_config_path)
+                return FeeSchedule(**json.loads(path.read_text(encoding="utf-8")))
+            except Exception:  # noqa: BLE001 - configuration must never crash startup
+                logger.exception(
+                    "Could not load AMAZON_FEE_CONFIG_PATH; using the bundled default schedule"
+                )
         return FeeSchedule()
 
 
@@ -324,7 +324,12 @@ def get_settings() -> Settings:
 
 
 def configure_logging(settings: Settings | None = None) -> None:
-    """Configure logging to stderr so stdout stays reserved for MCP stdio traffic."""
+    """Configure logging to stderr so stdout stays reserved for MCP stdio traffic.
+
+    Installs a redaction filter as well: some providers require an API key in the
+    query string, and libraries such as httpx log full request URLs, so keys are
+    scrubbed from every record before a handler can write it.
+    """
     import sys
 
     settings = settings or get_settings()
@@ -334,4 +339,16 @@ def configure_logging(settings: Settings | None = None) -> None:
         stream=sys.stderr,
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         force=True,
+    )
+
+    from services.security import install_log_redaction  # noqa: PLC0415 - avoids an import cycle
+
+    install_log_redaction(
+        [
+            settings.amazon_api_key,
+            settings.amazon_api_secret,
+            settings.product_data_api_key,
+            settings.supplier_api_key,
+            settings.web_search_api_key,
+        ]
     )

@@ -16,6 +16,10 @@ Guardrails, all enforced before a request leaves the process:
 * **Page budget** - ``BROWSER_MAX_PAGES_PER_RUN`` caps a single research run.
 * **Honest identification** - a real Chromium user agent, or your own via
   ``BROWSER_USER_AGENT``.
+* **SSRF protection** - scheme, port and resolved IP are checked before any
+  request, and every redirect hop is revalidated, so a redirect cannot walk the
+  fetch onto loopback, a private range or a cloud metadata endpoint.
+* **Response size cap** - bodies are streamed with a hard byte limit.
 
 What this module deliberately does **not** do: rotate proxies, spoof or
 randomise browser fingerprints, install stealth patches, or solve CAPTCHAs.
@@ -38,6 +42,11 @@ import httpx
 
 from config.settings import Settings, get_settings
 from services import Confidence, DataEnvelope, DataType, ServiceError, TTLCache
+from services.security import (
+    MAX_RESPONSE_BYTES,
+    fetch_with_validated_redirects,
+    validate_public_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +178,8 @@ class BrowserService:
             "playwright_available": _playwright_available(),
             "user_agent": self.user_agent,
             "bot_protection_bypass": "not implemented by design",
+            "ssrf_protection": "scheme, port and resolved IP checked; every redirect hop revalidated",
+            "max_response_bytes": MAX_RESPONSE_BYTES,
         }
 
     # -- guardrails ------------------------------------------------------- #
@@ -196,14 +207,23 @@ class BrowserService:
         robots_url = urljoin(f"{urlparse(url).scheme}://{host}", "/robots.txt")
         parser: robotparser.RobotFileParser | None = None
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                response = await client.get(robots_url, headers={"User-Agent": self.user_agent})
+            # robots.txt is fetched from the same host, so it needs the same
+            # SSRF checks and redirect validation as any other request.
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response, _, body = await fetch_with_validated_redirects(
+                    client,
+                    robots_url,
+                    headers={"User-Agent": self.user_agent},
+                    domain_check=self._check_domain,
+                    max_bytes=512 * 1024,
+                )
+                response_text = body.decode("utf-8", errors="replace")
             if response.status_code == 200:
                 parser = robotparser.RobotFileParser()
-                parser.parse(response.text.splitlines())
+                parser.parse(response_text.splitlines())
             else:
                 logger.info("No robots.txt at %s (HTTP %s)", robots_url, response.status_code)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ServiceError) as exc:
             logger.warning("Could not fetch robots.txt from %s: %s", robots_url, type(exc).__name__)
 
         self._robots[host] = parser
@@ -268,7 +288,8 @@ class BrowserService:
         content is built by JavaScript.
         """
         self._check_enabled()
-        host = self._check_domain(url)
+        validate_public_url(url)          # scheme, port, and the resolved IP
+        host = self._check_domain(url)    # operator allowlist
 
         cache_key = f"fetch::{url}::{render}"
         if use_cache:
@@ -290,19 +311,30 @@ class BrowserService:
         return result
 
     async def _fetch_plain(self, url: str) -> FetchResult:
+        """Fetch with httpx, validating every redirect hop and capping the body."""
         headers = {
             "User-Agent": self.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-IN,en;q=0.9",
         }
         try:
-            async with httpx.AsyncClient(
-                timeout=self.settings.browser_timeout_seconds, follow_redirects=True
-            ) as client:
-                response = await client.get(url, headers=headers)
+            async with httpx.AsyncClient(timeout=self.settings.browser_timeout_seconds) as client:
+                response, final_url, body = await fetch_with_validated_redirects(
+                    client,
+                    url,
+                    headers=headers,
+                    domain_check=self._check_domain,
+                    max_bytes=MAX_RESPONSE_BYTES,
+                )
         except httpx.HTTPError as exc:
             raise ServiceError(f"Could not fetch {url}: {type(exc).__name__}") from exc
-        return FetchResult(url=url, status_code=response.status_code, html=response.text, engine="httpx")
+
+        return FetchResult(
+            url=final_url,
+            status_code=response.status_code,
+            html=body.decode(response.encoding or "utf-8", errors="replace"),
+            engine="httpx",
+        )
 
     async def _fetch_rendered(self, url: str) -> FetchResult:
         """Render the page in headless Chromium via Playwright."""
@@ -319,10 +351,28 @@ class BrowserService:
                     user_agent=self.user_agent,
                     locale="en-IN",
                     viewport={"width": 1366, "height": 900},
+                    java_script_enabled=True,
                 )
                 page = await context.new_page()
+
+                # Chromium would otherwise follow redirects and load subresources
+                # anywhere. Every request the page makes is checked against the
+                # same allowlist and SSRF rules as a direct fetch.
+                async def _gate(route: Any, request: Any) -> None:
+                    try:
+                        validate_public_url(request.url, resolve=False)
+                        self._check_domain(request.url)
+                    except ServiceError:
+                        logger.debug("Blocked in-page request to %s", request.url)
+                        await route.abort()
+                        return
+                    await route.continue_()
+
+                await page.route("**/*", _gate)
                 response = await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
                 html = await page.content()
+                if len(html) > MAX_RESPONSE_BYTES:
+                    raise ServiceError("Rendered page exceeded the response size cap.")
                 status = response.status if response else 0
             finally:
                 await browser.close()

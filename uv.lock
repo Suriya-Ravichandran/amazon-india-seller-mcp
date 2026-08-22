@@ -16,7 +16,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "amazon-product-mcp"
+name = "amazon-india-seller-mcp"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

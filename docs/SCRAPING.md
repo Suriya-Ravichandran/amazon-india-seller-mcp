@@ -169,7 +169,7 @@ to override any bundled selector:
 ```
 
 ```ini
-BROWSER_SELECTORS_PATH=D:/project/Amazon-India-Product-Research-MCP/selectors.json
+BROWSER_SELECTORS_PATH=D:/project/amazon-india-seller-mcp/selectors.json
 ```
 
 Only the keys you supply are overridden; everything else keeps its default.
